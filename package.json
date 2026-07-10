@@ -11,7 +11,7 @@
     "dev": "pnpm --parallel --filter \"./frontend\" --filter \"./backend\" dev",
     "dev:frontend": "pnpm --filter ./frontend dev",
     "dev:backend": "pnpm --filter ./backend dev",
-    "build": "pnpm --filter ./frontend build",
+    "build": "pnpm --filter pgpos-frontend run build",
     "seed": "pnpm --filter ./backend seed"
   }
 }
