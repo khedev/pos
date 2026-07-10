@@ -28,6 +28,18 @@ app.use(helmet());
 app.use(cors({
   origin: config.cors.origin,
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  optionsSuccessStatus: 204,
+}));
+
+// Handle preflight OPTIONS requests explicitly (belt-and-suspenders approach)
+app.options('*', cors({
+  origin: config.cors.origin,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  optionsSuccessStatus: 204,
 }));
 
 // Rate limiting
