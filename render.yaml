@@ -16,7 +16,7 @@ services:
       - key: PORT
         value: "5001"
       - key: CORS_ORIGIN
-        value: https://pos-ho4t1uamw-khedevs-projects.vercel.app
+        value: https://pos-pg-virid.vercel.app
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
