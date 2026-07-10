@@ -1,13 +1,11 @@
 /**
  * Vercel Serverless Entry Point
  *
- * This file is the entry point for Vercel Serverless Functions.
- * It wraps the Express app with serverless-http for proper
- * serverless request/response handling.
+ * Express app exported directly for Vercel's serverless runtime.
+ * Vercel handles Express natively — no need for serverless-http wrapper.
  *
  * No app.listen() here — Vercel handles invocation automatically.
  */
-import serverless from 'serverless-http';
 import app from '../src/app.js';
 
-export const handler = serverless(app);
+export default app;
