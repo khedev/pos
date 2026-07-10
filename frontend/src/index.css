@@ -1,0 +1,271 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    /* Momentum scrolling on iOS */
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
+  }
+
+  /* Lock background scroll when a drawer/modal is open */
+  body.no-scroll {
+    overflow: hidden;
+  }
+
+  /* Responsive typography scale (mobile-first) */
+  h1, .text-title { font-size: 1.5rem; line-height: 2rem; }
+  h2, .text-heading { font-size: 1.25rem; line-height: 1.75rem; }
+
+  @media (min-width: 768px) {
+    h1, .text-title { font-size: 1.875rem; line-height: 2.25rem; }
+    h2, .text-heading { font-size: 1.375rem; line-height: 1.875rem; }
+  }
+  @media (min-width: 1280px) {
+    h1, .text-title { font-size: 2.25rem; line-height: 2.5rem; }
+    h2, .text-heading { font-size: 1.5rem; line-height: 2rem; }
+  }
+}
+
+/* Touch-friendly form controls & buttons (min 44px target) */
+@layer components {
+  .touch-target {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+  select, input, textarea, button {
+    touch-action: manipulation;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ---------- Responsive Modal / Bottom Sheet ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgb(0 0 0 / 0.5);
+  padding: 1rem;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.modal-panel {
+  width: 100%;
+  background-color: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.modal-body {
+  padding: 1.25rem;
+}
+
+.modal-footer {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid hsl(var(--border));
+}
+
+/* On phones, modals become fullscreen sheets */
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+  .modal-panel {
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+    /* Respect notches / home indicator */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ---------- Retrofit: legacy inline modals -> responsive sheets ----------
+   Existing pages render modals with the markup below; we normalize them so
+   they also become fullscreen bottom-sheets on phones with safe-area support
+   and sticky header/footer, without rewriting every page. */
+@media (max-width: 640px) {
+  .fixed.inset-0.z-50.bg-black\/50 {
+    padding: 0;
+    align-items: stretch;
+  }
+  .fixed.inset-0.z-50.bg-black\/50 > div {
+    width: 100%;
+    max-width: 100% !important;
+    height: 100%;
+    max-height: 100% !important;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Sticky header (first bordered row) and footer (last bordered row) */
+  .fixed.inset-0.z-50.bg-black\/50 > div > .border-b,
+  .fixed.inset-0.z-50.bg-black\/50 > div > div.border-b {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #fff;
+  }
+  .fixed.inset-0.z-50.bg-black\/50 > div > div.pt-4.border-t,
+  .fixed.inset-0.z-50.bg-black\/50 > div > .flex.justify-end.pt-4.border-t {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    background: #fff;
+  }
+}
+
+/* ---------- Responsive Table -> Card stack on mobile ---------- */
+@media (max-width: 767px) {
+  .table-card {
+    display: block;
+    width: 100%;
+  }
+  .table-card thead {
+    display: none;
+  }
+  .table-card tbody,
+  .table-card tr {
+    display: block;
+    width: 100%;
+  }
+  .table-card tr {
+    margin-bottom: 0.75rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    background: #fff;
+    padding: 0.25rem 0.5rem;
+  }
+  .table-card td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    text-align: right;
+    width: 100%;
+  }
+  .table-card td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #6b7280;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  .table-card td:last-child {
+    border-bottom: none;
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}

@@ -1,0 +1,1 @@
+import{j as e,O as t}from"./index-RV32k4zx.js";const s=()=>e.jsx("div",{className:"min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 flex items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]",children:e.jsx("div",{className:"w-full max-w-md",children:e.jsx(t,{})})});export{s as default};
