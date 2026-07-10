@@ -1,0 +1,6 @@
+{
+  "installCommand": "CI=true pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm run build",
+  "framework": null,
+  "outputDirectory": "frontend/dist"
+}

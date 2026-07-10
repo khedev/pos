@@ -3,6 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "description": "PGPOS - Pharmacy & Grocery POS System",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter \"./frontend\" --filter \"./backend\" dev",
     "dev:frontend": "pnpm --filter ./frontend dev",
