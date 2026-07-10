@@ -42,13 +42,12 @@ const Login = () => {
       // Redirect based on role
       switch (user?.role) {
         case 'admin':
+        case 'manager':
           navigate('/dashboard');
           break;
         case 'cashier':
-          navigate('/pos');
-          break;
         case 'csr':
-          navigate('/receiving');
+          navigate('/pos');
           break;
         default:
           navigate('/dashboard');
