@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+build/
+frontend/dist/
+*.tsbuildinfo
+.vite/
+
+# Environment variables (keep examples tracked)
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# Uploaded files
+backend/uploads/
+!backend/uploads/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# Coverage / test
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime / misc
+*.pid
+*.seed
+.cache/
