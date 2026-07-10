@@ -18,14 +18,14 @@ const navigationGroups = [
     label: 'Main',
     items: [
       { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'manager', 'cashier', 'csr'] },
-      { path: '/pos', label: 'POS', icon: ShoppingCart, roles: ['admin', 'manager', 'cashier', 'csr'] },
+      { path: '/pos', label: 'POS', icon: ShoppingCart, roles: ['admin', 'manager', 'cashier'] },
     ],
   },
   {
     label: 'Inventory',
     items: [
       { path: '/inventory', label: 'Inventory', icon: Package, roles: ['admin', 'manager', 'cashier', 'csr'] },
-      { path: '/receiving', label: 'Receiving', icon: Truck, roles: ['admin', 'manager'] },
+      { path: '/receiving', label: 'Receiving', icon: Truck, roles: ['admin', 'manager', 'csr'] },
       { path: '/categories', label: 'Categories', icon: FolderTree, roles: ['admin', 'manager'] },
       { path: '/suppliers', label: 'Suppliers', icon: Building2, roles: ['admin', 'manager'] },
     ],
@@ -33,7 +33,7 @@ const navigationGroups = [
   {
     label: 'Reports',
     items: [
-      { path: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'manager'] },
+      { path: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'manager', 'csr'] },
       { path: '/audit-log', label: 'Audit Log', icon: ScrollText, roles: ['admin'] },
     ],
   },

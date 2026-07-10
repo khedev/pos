@@ -46,8 +46,10 @@ const Login = () => {
           navigate('/dashboard');
           break;
         case 'cashier':
-        case 'csr':
           navigate('/pos');
+          break;
+        case 'csr':
+          navigate('/receiving');
           break;
         default:
           navigate('/dashboard');

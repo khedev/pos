@@ -85,11 +85,9 @@ export const DEFAULT_ROLE_PERMISSIONS = {
   ],
   csr: [
     'dashboard.read',
-    'pos.access',
-    'sales.read',
-    'sales.create',
-    'inventory.read',
+    'inventory.view',
     'receiving.read',
+    'reports.view',
     'categories.read',
     'suppliers.read',
     'notifications.read',

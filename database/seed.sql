@@ -101,7 +101,26 @@ CROSS JOIN (VALUES
   ('receiving.create'),
   ('reports.view')
 ) AS p(permission)
-WHERE r.name IN ('admin', 'cashier', 'csr')
+WHERE r.name IN ('admin', 'cashier')
+  AND NOT EXISTS (
+    SELECT 1 FROM permissions WHERE role_id = r.id AND permission = p.permission
+  );
+
+-- CSR-specific permissions
+INSERT INTO permissions (role_id, permission)
+SELECT r.id, p.permission
+FROM roles r
+CROSS JOIN (VALUES
+  ('dashboard.view'),
+  ('inventory.view'),
+  ('receiving.read'),
+  ('receiving.create'),
+  ('reports.view'),
+  ('categories.read'),
+  ('suppliers.read'),
+  ('notifications.read')
+) AS p(permission)
+WHERE r.name = 'csr'
   AND NOT EXISTS (
     SELECT 1 FROM permissions WHERE role_id = r.id AND permission = p.permission
   );
