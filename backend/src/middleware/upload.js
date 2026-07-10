@@ -1,20 +1,32 @@
 /**
  * File upload middleware for PGPOS
  * Uses multer for handling file uploads
+ *
+ * NOTE: On Vercel serverless, the filesystem is ephemeral.
+ * Uploaded files are written to /tmp and will NOT persist
+ * across function invocations. For production, use external
+ * storage (Supabase Storage, S3, etc.) for permanent file storage.
  */
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Use /tmp on Vercel (serverless), local uploads directory otherwise
+const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+const UPLOAD_BASE = isVercel
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.resolve(__dirname, '../../uploads');
+
 // Ensure upload directories exist
 const uploadDirs = [
-  path.resolve(__dirname, '../../uploads/products'),
-  path.resolve(__dirname, '../../uploads/avatars'),
-  path.resolve(__dirname, '../../uploads/excel'),
+  path.join(UPLOAD_BASE, 'products'),
+  path.join(UPLOAD_BASE, 'avatars'),
+  path.join(UPLOAD_BASE, 'excel'),
 ];
 
 uploadDirs.forEach((dir) => {
@@ -26,7 +38,7 @@ uploadDirs.forEach((dir) => {
 // Storage configuration
 const productStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.resolve(__dirname, '../../uploads/products'));
+    cb(null, path.join(UPLOAD_BASE, 'products'));
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -37,7 +49,7 @@ const productStorage = multer.diskStorage({
 
 const avatarStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.resolve(__dirname, '../../uploads/avatars'));
+    cb(null, path.join(UPLOAD_BASE, 'avatars'));
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -48,10 +60,11 @@ const avatarStorage = multer.diskStorage({
 
 const excelStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.resolve(__dirname, '../../uploads/excel'));
+    cb(null, path.join(UPLOAD_BASE, 'excel'));
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `import-${uniqueSuffix}.xlsx`);
   },
 });

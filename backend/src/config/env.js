@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export const config = {
-  port: parseInt(process.env.PORT, 10) || 5000,
+  port: parseInt(process.env.PORT, 10) || 5001,
   nodeEnv: process.env.NODE_ENV || 'development',
 
   supabase: {
@@ -27,7 +27,9 @@ export const config = {
   cors: {
     origin: process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-      : ['http://localhost:5173', 'http://localhost:4173'],
+      : (process.env.NODE_ENV === 'production'
+          ? ['https://pos-pg-virid.vercel.app']
+          : ['http://localhost:5173', 'http://localhost:4173']),
   },
 
   rateLimit: {

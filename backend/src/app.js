@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import path from 'path';
+import os from 'os';
+import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import config from './config/env.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
@@ -20,6 +23,9 @@ import auditRoutes from './routes/audit.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import activityRoutes from './routes/activity.routes.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -60,7 +66,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Static files for uploads
-app.use('/uploads', express.static('uploads'));
+// On Vercel, use /tmp/uploads; locally use the project uploads directory
+const isVercel = process.env.VERCEL === '1' || config.nodeEnv === 'production';
+const uploadsPath = isVercel
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.resolve(__dirname, '../uploads');
+app.use('/uploads', express.static(uploadsPath));
 
 // API Routes
 app.use('/api/auth', authRoutes);
