@@ -1,5 +1,31 @@
 import { supabaseAdmin as supabase } from '../config/supabase.js';
 
+export const getActiveUsers = async (req, res, next) => {
+  try {
+    const { count, error } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+
+    if (error) throw error;
+
+    res.json({ count: count || 0 });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSystemHealth = async (req, res, next) => {
+  try {
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getActivity = async (req, res, next) => {
   try {
     const today = new Date();

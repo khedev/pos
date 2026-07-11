@@ -11,7 +11,7 @@ const startServer = () => {
 ║ Status:  Running                            ║
 ║ Port:    ${config.port.toString().padEnd(36)}║
 ║ Env:     ${config.nodeEnv.padEnd(36)}║
-║ CORS:    ${(Array.isArray(config.cors.origin) ? config.cors.origin.join(', ') : config.cors.origin).padEnd(36)}║
+║ CORS:    ${(typeof config.cors.origin === 'function' ? 'dynamic' : Array.isArray(config.cors.origin) ? config.cors.origin.join(', ') : config.cors.origin || 'all').padEnd(36)}║
 ╚══════════════════════════════════════════════╝
       `);
     });

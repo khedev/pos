@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import {
   getNotifications,
+  getUnreadCount,
   markRead,
   markAllRead,
   deleteNotification,
@@ -12,8 +13,9 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', getNotifications);
-router.post('/:id/read', markRead);
-router.post('/read-all', markAllRead);
+router.get('/unread-count', getUnreadCount);
+router.put('/:id/read', markRead);
+router.put('/read-all', markAllRead);
 router.delete('/:id', deleteNotification);
 
 export default router;

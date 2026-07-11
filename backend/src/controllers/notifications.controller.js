@@ -82,6 +82,22 @@ export const deleteNotification = async (req, res, next) => {
   }
 };
 
+export const getUnreadCount = async (req, res, next) => {
+  try {
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', req.user.id)
+      .eq('is_read', false);
+
+    if (error) throw error;
+
+    res.json({ count: count || 0 });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Helper to create a notification (used internally)
 export const createNotification = async ({ userId, type, title, message, link }) => {
   try {

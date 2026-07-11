@@ -29,7 +29,7 @@ const ActivityDashboard = () => {
         activityAPI.getSystemHealth(),
         dashboardAPI.getSummary().catch(() => ({ data: {} })),
       ]);
-      setActivity(activityRes.data?.items || activityRes.data || []);
+      setActivity(activityRes.data?.recentActivity || []);
       setActiveUsers(usersRes.data?.count || 0);
       setSystemHealth(healthRes.data || { status: 'healthy', uptime: '0h', dbSize: '0 MB' });
       setSummary(summaryRes.data || {});
