@@ -3,6 +3,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import RoleGuard from '@/components/RoleGuard';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 
 const LoginLayout = lazy(() => import('@/pages/Login/LoginLayout'));
 const Login = lazy(() => import('@/pages/Login/Login'));
@@ -22,7 +23,7 @@ const Notifications = lazy(() => import('@/pages/Notifications/Notifications'));
 const ActivityDashboard = lazy(() => import('@/pages/ActivityDashboard/ActivityDashboard'));
 
 const page = (element) => (
-  <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
+  <Suspense fallback={<PageSkeleton />}>
     {element}
   </Suspense>
 );

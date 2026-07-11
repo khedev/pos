@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   DollarSign, TrendingUp, Calendar, Wallet, Coins, Package, Users,
-  AlertTriangle, Clock, ShoppingCart, Loader2, RefreshCw, ChevronRight,
+  AlertTriangle, Clock, ShoppingCart, Loader2, RefreshCw,
 } from 'lucide-react';
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -21,7 +21,7 @@ const formatCurrency = (value) => {
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 
-const SummaryCard = ({ title, value, icon: Icon, color, subtitle }) => (
+const SummaryCard = memo(({ title, value, icon: Icon, color, subtitle }) => (
   <Card className="hover:shadow-lg transition-shadow">
     <CardContent className="p-4 sm:p-6">
       <div className="flex items-center justify-between">
@@ -36,7 +36,7 @@ const SummaryCard = ({ title, value, icon: Icon, color, subtitle }) => (
       </div>
     </CardContent>
   </Card>
-);
+));
 
 const Dashboard = () => {
   const { user } = useAuthStore();
