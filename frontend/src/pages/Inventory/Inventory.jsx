@@ -396,13 +396,19 @@ const Inventory = () => {
                           <img
                             src={product.image_url}
                             alt={product.name}
-                            className="h-10 w-10 rounded object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            className="h-10 w-10 rounded object-cover bg-gray-50"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextElementSibling?.classList.remove('hidden');
+                            }}
                           />
-                        ) : (
-                          <div className="h-10 w-10 rounded bg-gray-100 flex items-center justify-center">
-                            <Package className="h-5 w-5 text-gray-400" />
-                          </div>
-                        )}
+                        ) : null}
+                        <div className={`h-10 w-10 rounded bg-gray-100 flex items-center justify-center ${product.image_url ? 'hidden' : ''}`}
+                             data-fallback>
+                          <Package className="h-5 w-5 text-gray-400" />
+                        </div>
                       </TableCell>
                       <TableCell className="font-medium">
                         <div className="max-w-[200px] truncate">{product.name}</div>
@@ -507,7 +513,7 @@ const Inventory = () => {
                 <div className="grid grid-cols-2 gap-4">
                   {selectedProduct.image_url && (
                     <div className="col-span-2 flex justify-center">
-                      <img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-32 w-32 object-cover rounded-lg" />
+                      <img src={selectedProduct.image_url} alt={selectedProduct.name} loading="lazy" decoding="async" className="h-32 w-32 object-cover rounded-lg bg-gray-50" />
                     </div>
                   )}
                   <div><label className="text-xs text-gray-500">Name</label><p className="font-medium">{selectedProduct.name}</p></div>

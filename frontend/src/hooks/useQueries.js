@@ -2,22 +2,21 @@
  * Centralized data fetching hooks using TanStack React Query.
  * Every component should use these hooks instead of raw useEffect + API calls.
  * This ensures cache sharing, deduplication, and stale-while-revalidate behavior.
+ *
+ * All queryFn implementations delegate to the service layer (services/*)
+ * to keep API call logic separate from hook logic.
  */
 import { useQuery } from '@tanstack/react-query';
 import {
-  inventoryAPI,
-  categoriesAPI,
-  suppliersAPI,
-  dashboardAPI,
-  salesAPI,
-  reportsAPI,
-  receivingAPI,
-  usersAPI,
-  notificationsAPI,
-  settingsAPI,
-  auditAPI,
-  activityAPI,
-} from '@/lib/api';
+  productsService,
+  categoriesService,
+  suppliersService,
+  dashboardService,
+  salesService,
+  reportsService,
+  receivingService,
+  usersService,
+} from '@/services';
 
 // ============================================================
 // Static/Reference Data — long cache lifetime (24h)
@@ -32,10 +31,7 @@ const GC_TIME_STATIC = 48 * 60 * 60 * 1000; // 48 hours
 export function useCategories() {
   return useQuery({
     queryKey: ['categories'],
-    queryFn: async () => {
-      const res = await categoriesAPI.getAll({ limit: 500 });
-      return res.data?.items || [];
-    },
+    queryFn: () => categoriesService.getAll({ limit: 500 }),
     staleTime: STALE_TIME_STATIC,
     gcTime: GC_TIME_STATIC,
     placeholderData: [],
@@ -48,10 +44,7 @@ export function useCategories() {
 export function useSuppliers() {
   return useQuery({
     queryKey: ['suppliers'],
-    queryFn: async () => {
-      const res = await suppliersAPI.getAll({ limit: 500 });
-      return res.data?.items || [];
-    },
+    queryFn: () => suppliersService.getAll({ limit: 500 }),
     staleTime: STALE_TIME_STATIC,
     gcTime: GC_TIME_STATIC,
     placeholderData: [],
@@ -65,6 +58,7 @@ export function useSettings() {
   return useQuery({
     queryKey: ['settings'],
     queryFn: async () => {
+      const { settingsAPI } = await import('@/lib/api');
       const res = await settingsAPI.getAll();
       return res.data || {};
     },
@@ -80,6 +74,7 @@ export function useCompanyInfo() {
   return useQuery({
     queryKey: ['settings', 'company'],
     queryFn: async () => {
+      const { settingsAPI } = await import('@/lib/api');
       const res = await settingsAPI.getCompanyInfo();
       return res.data || {};
     },
@@ -118,16 +113,7 @@ export function useProducts(filters = {}) {
   const { page = 1, limit = 20, search = '', category = '', supplier = '', stock_status = '', expiration_status = '' } = filters;
   return useQuery({
     queryKey: ['products', { page, limit, search, category, supplier, stock_status, expiration_status }],
-    queryFn: async () => {
-      const params = { page, limit };
-      if (search) params.search = search;
-      if (category) params.category = category;
-      if (supplier) params.supplier = supplier;
-      if (stock_status) params.stock_status = stock_status;
-      if (expiration_status) params.expiration_status = expiration_status;
-      const res = await inventoryAPI.getAll(params);
-      return res.data;
-    },
+    queryFn: () => productsService.getAll({ page, limit, search, category, supplier, stock_status, expiration_status }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev, // Keep previous data while loading
@@ -140,11 +126,7 @@ export function useProducts(filters = {}) {
 export function useProduct(id) {
   return useQuery({
     queryKey: ['products', id],
-    queryFn: async () => {
-      if (!id) return null;
-      const res = await inventoryAPI.getById(id);
-      return res.data;
-    },
+    queryFn: () => productsService.getById(id),
     enabled: !!id,
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
@@ -157,13 +139,7 @@ export function useProduct(id) {
 export function useProductSearch(query, category = '', enabled = true) {
   return useQuery({
     queryKey: ['products', 'search', query, category],
-    queryFn: async () => {
-      if (!query) return [];
-      const params = { search: query, limit: 20 };
-      if (category) params.category = category;
-      const res = await inventoryAPI.getAll(params);
-      return res.data.items || [];
-    },
+    queryFn: () => productsService.search(query, category, 20),
     enabled: enabled && !!query,
     staleTime: 60 * 1000, // 1 minute for search results
     gcTime: 5 * 60 * 1000,
@@ -184,26 +160,26 @@ export function useDashboard() {
   return useQuery({
     queryKey: ['dashboard'],
     queryFn: async () => {
-      const [summaryRes, graphRes, dailyRes, catRes, itemRes] = await Promise.all([
-        dashboardAPI.getSummary(),
-        dashboardAPI.getGraph(),
-        dashboardAPI.getDailySales(),
-        dashboardAPI.getCategorySales(),
-        dashboardAPI.getItemSales(),
+      const [summaryRes, graphData, dailySales, categorySalesData, itemSalesData] = await Promise.all([
+        dashboardService.getSummary(),
+        dashboardService.getGraph(),
+        dashboardService.getDailySales(),
+        dashboardService.getCategorySales(),
+        dashboardService.getItemSales(),
       ]);
 
-      const graphData = graphRes.data?.data || graphRes.data?.labels?.map((l, i) => ({
+      const graph = graphData?.data || graphData?.labels?.map((l, i) => ({
         label: l,
-        sales: graphRes.data?.values?.[i] || 0,
-        count: graphRes.data?.counts?.[i] || 0,
+        sales: graphData?.values?.[i] || 0,
+        count: graphData?.counts?.[i] || 0,
       })) || [];
 
       return {
-        summary: summaryRes.data,
-        graphData,
-        dailySales: dailyRes.data,
-        categorySales: catRes.data,
-        bestSellers: itemRes.data || [],
+        summary: summaryRes,
+        graphData: graph,
+        dailySales,
+        categorySales: categorySalesData,
+        bestSellers: itemSalesData || [],
       };
     },
     staleTime: STALE_TIME_DASHBOARD,
@@ -224,13 +200,7 @@ export function useSales(filters = {}, options = {}) {
   const { page = 1, limit = 20, startDate, endDate } = filters;
   return useQuery({
     queryKey: ['sales', { page, limit, startDate, endDate }],
-    queryFn: async () => {
-      const params = { page, limit };
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
-      const res = await salesAPI.getAll(params);
-      return res.data;
-    },
+    queryFn: () => salesService.getAll({ page, limit, startDate, endDate }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
@@ -249,13 +219,7 @@ export function useSalesReport(filters = {}) {
   const { startDate, endDate, period = 'daily' } = filters;
   return useQuery({
     queryKey: ['reports', 'sales', { startDate, endDate, period }],
-    queryFn: async () => {
-      const params = {};
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
-      const res = await reportsAPI.getSales({ ...params, period });
-      return res.data;
-    },
+    queryFn: () => reportsService.getSales({ startDate, endDate, period }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
@@ -269,13 +233,7 @@ export function useItemSalesReport(filters = {}) {
   const { startDate, endDate } = filters;
   return useQuery({
     queryKey: ['reports', 'item-sales', { startDate, endDate }],
-    queryFn: async () => {
-      const params = {};
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
-      const res = await reportsAPI.getItemSales(params);
-      return res.data;
-    },
+    queryFn: () => reportsService.getItemSales({ startDate, endDate }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
@@ -288,10 +246,7 @@ export function useItemSalesReport(filters = {}) {
 export function useInventoryReport(filter = '') {
   return useQuery({
     queryKey: ['reports', 'inventory', filter],
-    queryFn: async () => {
-      const res = await reportsAPI.getInventory({ filter: filter || undefined });
-      return res.data;
-    },
+    queryFn: () => reportsService.getInventory({ filter: filter || undefined }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
@@ -305,14 +260,7 @@ export function useReceivingReport(filters = {}) {
   const { startDate, endDate, supplier_id } = filters;
   return useQuery({
     queryKey: ['reports', 'receiving', { startDate, endDate, supplier_id }],
-    queryFn: async () => {
-      const params = {};
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
-      if (supplier_id) params.supplier_id = supplier_id;
-      const res = await reportsAPI.getReceiving(params);
-      return res.data;
-    },
+    queryFn: () => reportsService.getReceiving({ startDate, endDate, supplier_id }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
@@ -327,10 +275,7 @@ export function useReceivingList(filters = {}) {
   const { page = 1, limit = 20 } = filters;
   return useQuery({
     queryKey: ['receiving', { page, limit }],
-    queryFn: async () => {
-      const res = await receivingAPI.getAll({ page, limit });
-      return res.data;
-    },
+    queryFn: () => receivingService.getAll({ page, limit }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
@@ -340,11 +285,7 @@ export function useReceivingList(filters = {}) {
 export function useReceiving(id) {
   return useQuery({
     queryKey: ['receiving', id],
-    queryFn: async () => {
-      if (!id) return null;
-      const res = await receivingAPI.getById(id);
-      return res.data;
-    },
+    queryFn: () => receivingService.getById(id),
     enabled: !!id,
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
@@ -359,12 +300,7 @@ export function useUsers(filters = {}) {
   const { page = 1, limit = 20, search = '' } = filters;
   return useQuery({
     queryKey: ['users', { page, limit, search }],
-    queryFn: async () => {
-      const params = { page, limit };
-      if (search) params.search = search;
-      const res = await usersAPI.getAll(params);
-      return res.data;
-    },
+    queryFn: () => usersService.getAll({ page, limit, search }),
     staleTime: STALE_TIME_NORMAL,
     gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
@@ -372,7 +308,7 @@ export function useUsers(filters = {}) {
 }
 
 // ============================================================
-// Notifications
+// Notifications / Activity / Audit — dynamic (short cache)
 // ============================================================
 
 export function useNotifications(filters = {}) {
@@ -380,6 +316,7 @@ export function useNotifications(filters = {}) {
   return useQuery({
     queryKey: ['notifications', { page, limit }],
     queryFn: async () => {
+      const { notificationsAPI } = await import('@/lib/api');
       const res = await notificationsAPI.getAll({ page, limit });
       return res.data;
     },
@@ -394,6 +331,7 @@ export function useUnreadNotificationCount() {
   return useQuery({
     queryKey: ['notifications', 'unread-count'],
     queryFn: async () => {
+      const { notificationsAPI } = await import('@/lib/api');
       const res = await notificationsAPI.getUnreadCount();
       return res.data?.count || 0;
     },
@@ -404,15 +342,12 @@ export function useUnreadNotificationCount() {
   });
 }
 
-// ============================================================
-// Audit Logs
-// ============================================================
-
 export function useAuditLogs(filters = {}) {
   const { page = 1, limit = 50 } = filters;
   return useQuery({
     queryKey: ['audit-logs', { page, limit }],
     queryFn: async () => {
+      const { auditAPI } = await import('@/lib/api');
       const res = await auditAPI.getAll({ page, limit });
       return res.data;
     },
@@ -422,15 +357,12 @@ export function useAuditLogs(filters = {}) {
   });
 }
 
-// ============================================================
-// Activity
-// ============================================================
-
 export function useActivity(filters = {}) {
   const { page = 1, limit = 50 } = filters;
   return useQuery({
     queryKey: ['activity', { page, limit }],
     queryFn: async () => {
+      const { activityAPI } = await import('@/lib/api');
       const res = await activityAPI.getActivity({ page, limit });
       return res.data;
     },
@@ -445,6 +377,7 @@ export function useActiveUsers() {
   return useQuery({
     queryKey: ['activity', 'active-users'],
     queryFn: async () => {
+      const { activityAPI } = await import('@/lib/api');
       const res = await activityAPI.getActiveUsers();
       return res.data || [];
     },
@@ -458,6 +391,7 @@ export function useSystemHealth() {
   return useQuery({
     queryKey: ['activity', 'system-health'],
     queryFn: async () => {
+      const { activityAPI } = await import('@/lib/api');
       const res = await activityAPI.getSystemHealth();
       return res.data || {};
     },
