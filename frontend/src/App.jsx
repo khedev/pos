@@ -15,7 +15,7 @@ const queryClient = new QueryClient({
       retry: 2,
       refetchOnWindowFocus: false,
       staleTime: 10 * 60 * 1000, // 10 minutes
-      gcTime: 30 * 60 * 1000, // 30 minutes garbage collection
+      gcTime: 24 * 60 * 60 * 1000, // 24 hours — matches persistence maxAge
       refetchOnMount: false,
       refetchOnReconnect: true,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
