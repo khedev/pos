@@ -13,7 +13,6 @@
     "@hookform/resolvers": "^4.0.0",
     "@tanstack/query-sync-storage-persister": "^5.101.2",
     "@tanstack/react-query": "^5.0.0",
-    "@tanstack/react-query-devtools": "^5.101.2",
     "@tanstack/react-query-persist-client": "^5.101.2",
     "@tanstack/react-table": "^8.0.0",
     "@tanstack/react-virtual": "^3.14.6",
