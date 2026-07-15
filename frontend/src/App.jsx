@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'react-hot-toast';
 import router from '@/routes';
 import useAuthStore from '@/store/authStore';
@@ -24,6 +27,13 @@ const queryClient = new QueryClient({
   },
 });
 
+// Persist query cache to IndexedDB via localStorage fallback
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: 'PGPOS_QUERY_CACHE',
+  throttleTime: 1000,
+});
+
 function App() {
   const checkAuth = useAuthStore((state) => state.checkAuth);
 
@@ -32,10 +42,18 @@ function App() {
   }, [checkAuth]);
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours max cache age
+        buster: 'v1', // Increment to bust cache on deploy
+      }}
+    >
       <RouterProvider router={router} />
       <Toaster position="top-right" />
-    </QueryClientProvider>
+      <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
+    </PersistQueryClientProvider>
   );
 }
 

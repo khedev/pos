@@ -78,6 +78,23 @@ export function TableSkeleton({ rows = 5, cols = 4 }) {
 }
 
 /**
+ * Card skeleton for card loading states
+ */
+export function CardSkeleton({ className }) {
+  return (
+    <div className={cn('rounded-lg border bg-card text-card-foreground shadow-sm p-6', className)}>
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-8 w-32" />
+        </div>
+        <Skeleton className="h-12 w-12 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+/**
  * Form skeleton for form loading states
  */
 export function FormSkeleton() {

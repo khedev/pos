@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   Search, Plus, FileDown, FileUp, FileText, Image, Trash2,
   Archive, Eye, Edit, ChevronLeft, ChevronRight, Loader2,
@@ -12,8 +12,12 @@ import Badge from '@/components/ui/Badge';
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from '@/components/ui/Table';
-import { inventoryAPI, categoriesAPI, suppliersAPI } from '@/lib/api';
+import { TableSkeleton, CardSkeleton } from '@/components/ui/Skeleton';
+import { useProducts, useCategories, useSuppliers } from '@/hooks/useQueries';
+import { useCreateProduct, useUpdateProduct, useDeleteProduct, useArchiveProduct, useUploadProductImage, useDeleteProductImage } from '@/hooks/useMutations';
+import { inventoryAPI } from '@/lib/api';
 import useAuthStore from '@/store/authStore';
+import toast from 'react-hot-toast';
 
 const INITIAL_PRODUCT = {
   barcode: '', sku: '', name: '', generic_name: '', brand: '',
@@ -26,21 +30,9 @@ const Inventory = () => {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
 
-  // Data state
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
-
-  // UI state
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-
   // Search & filter
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
   const [stockFilter, setStockFilter] = useState('');
@@ -48,11 +40,37 @@ const Inventory = () => {
   const [page, setPage] = useState(1);
   const limit = 20;
 
+  // Use cached queries
+  const { data: productsData, isLoading, isFetching, refetch } = useProducts({
+    page,
+    limit,
+    search: debouncedSearch,
+    category: categoryFilter,
+    supplier: supplierFilter,
+    stock_status: stockFilter,
+    expiration_status: expirationFilter,
+  });
+  const { data: categories = [] } = useCategories();
+  const { data: suppliers = [] } = useSuppliers();
+
+  const products = productsData?.items || [];
+  const total = productsData?.total || 0;
+  const totalPages = productsData?.totalPages || 0;
+
+  // Mutations
+  const createProductMutation = useCreateProduct();
+  const updateProductMutation = useUpdateProduct();
+  const deleteProductMutation = useDeleteProduct();
+  const archiveProductMutation = useArchiveProduct();
+  const uploadImageMutation = useUploadProductImage();
+  const deleteImageMutation = useDeleteProductImage();
+
   // Modals
   const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState('add'); // add | edit | view
+  const [modalMode, setModalMode] = useState('add');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [formData, setFormData] = useState(INITIAL_PRODUCT);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Import
   const [showImport, setShowImport] = useState(false);
@@ -64,78 +82,28 @@ const Inventory = () => {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
-  // Fetch categories & suppliers once
-  useEffect(() => {
-    const fetchLookups = async () => {
-      try {
-        const [catRes, supRes] = await Promise.all([
-          categoriesAPI.getAll(),
-          suppliersAPI.getAll(),
-        ]);
-        setCategories(catRes.data?.items || []);
-        setSuppliers(supRes.data?.items || []);
-      } catch (err) {
-        console.error('Failed to load lookups:', err);
-      }
-    };
-    fetchLookups();
-  }, []);
-
-  // Fetch products
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = { page, limit };
-      if (search) params.search = search;
-      if (categoryFilter) params.category = categoryFilter;
-      if (supplierFilter) params.supplier = supplierFilter;
-      if (stockFilter) params.stock_status = stockFilter;
-      if (expirationFilter) params.expiration_status = expirationFilter;
-
-      const res = await inventoryAPI.getAll(params);
-      setProducts(res.data.items || []);
-      setTotal(res.data.total || 0);
-      setTotalPages(res.data.totalPages || 0);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load products');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, categoryFilter, supplierFilter, stockFilter, expirationFilter]);
-
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
-
   // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
+  const searchTimerRef = React.useRef(null);
+  const handleSearchChange = useCallback((value) => {
+    setSearch(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
       if (page !== 1) setPage(1);
-      else fetchProducts();
     }, 400);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  // Clear messages
-  useEffect(() => {
-    if (success || error) {
-      const timer = setTimeout(() => { setSuccess(null); setError(null); }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [success, error]);
+  }, [page]);
 
   // ============================================================
   // MODAL HANDLERS
   // ============================================================
-  const openAddModal = () => {
+  const openAddModal = useCallback(() => {
     setModalMode('add');
     setFormData(INITIAL_PRODUCT);
     setSelectedProduct(null);
     setShowModal(true);
-  };
+  }, []);
 
-  const openEditModal = (product) => {
+  const openEditModal = useCallback((product) => {
     setModalMode('edit');
     setSelectedProduct(product);
     setFormData({
@@ -155,32 +123,31 @@ const Inventory = () => {
       image_url: product.image_url || '',
     });
     setShowModal(true);
-  };
+  }, []);
 
-  const openViewModal = (product) => {
+  const openViewModal = useCallback((product) => {
     setModalMode('view');
     setSelectedProduct(product);
     setShowModal(true);
-  };
+  }, []);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setShowModal(false);
     setSelectedProduct(null);
     setFormData(INITIAL_PRODUCT);
-  };
+  }, []);
 
   // ============================================================
   // CRUD OPERATIONS
   // ============================================================
-  const handleFormChange = (e) => {
+  const handleFormChange = useCallback((e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setActionLoading(true);
-    setError(null);
     try {
       const payload = {
         ...formData,
@@ -191,53 +158,32 @@ const Inventory = () => {
       };
 
       if (modalMode === 'add') {
-        await inventoryAPI.create(payload);
-        setSuccess('Product added successfully');
+        await createProductMutation.mutateAsync(payload);
       } else {
-        await inventoryAPI.update(selectedProduct.id, payload);
-        setSuccess('Product updated successfully');
+        await updateProductMutation.mutateAsync({ id: selectedProduct.id, data: payload });
       }
       closeModal();
-      fetchProducts();
     } catch (err) {
-      setError(err.response?.data?.message || 'Operation failed');
+      // Error handled in mutation
     } finally {
       setActionLoading(false);
     }
-  };
+  }, [formData, modalMode, selectedProduct, createProductMutation, updateProductMutation, closeModal]);
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (id) => {
     if (!window.confirm('Are you sure you want to delete this product?')) return;
-    setActionLoading(true);
-    try {
-      await inventoryAPI.delete(id);
-      setSuccess('Product deleted successfully');
-      fetchProducts();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Delete failed');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    await deleteProductMutation.mutateAsync(id);
+  }, [deleteProductMutation]);
 
-  const handleArchive = async (id) => {
+  const handleArchive = useCallback(async (id) => {
     if (!window.confirm('Archive this product? It will be hidden from active listings.')) return;
-    setActionLoading(true);
-    try {
-      await inventoryAPI.archive(id);
-      setSuccess('Product archived successfully');
-      fetchProducts();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Archive failed');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    await archiveProductMutation.mutateAsync(id);
+  }, [archiveProductMutation]);
 
   // ============================================================
   // IMPORT
   // ============================================================
-  const handleImport = async () => {
+  const handleImport = useCallback(async () => {
     if (!importFile) return;
     setActionLoading(true);
     setImportResult(null);
@@ -246,21 +192,21 @@ const Inventory = () => {
       formData.append('file', importFile);
       const res = await inventoryAPI.importExcel(formData);
       setImportResult(res.data);
-      setSuccess(res.data.message);
+      toast.success(res.data.message);
       setShowImport(false);
       setImportFile(null);
-      fetchProducts();
+      refetch();
     } catch (err) {
-      setError(err.response?.data?.message || 'Import failed');
+      toast.error(err.response?.data?.message || 'Import failed');
     } finally {
       setActionLoading(false);
     }
-  };
+  }, [importFile, refetch]);
 
   // ============================================================
   // EXPORT
   // ============================================================
-  const handleExportExcel = async () => {
+  const handleExportExcel = useCallback(async () => {
     try {
       const res = await inventoryAPI.exportExcel();
       const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -271,13 +217,13 @@ const Inventory = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setSuccess('Excel exported successfully');
+      toast.success('Excel exported successfully');
     } catch (err) {
-      setError('Export failed');
+      toast.error('Export failed');
     }
-  };
+  }, []);
 
-  const handleExportPdf = async () => {
+  const handleExportPdf = useCallback(async () => {
     try {
       const res = await inventoryAPI.exportPdf();
       const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -288,67 +234,57 @@ const Inventory = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setSuccess('PDF exported successfully');
+      toast.success('PDF exported successfully');
     } catch (err) {
-      setError('Export failed');
+      toast.error('Export failed');
     }
-  };
+  }, []);
 
   // ============================================================
   // IMAGE UPLOAD
   // ============================================================
-  const handleImageSelect = (e) => {
+  const handleImageSelect = useCallback((e) => {
     const file = e.target.files[0];
     if (file) {
       setImageFile(file);
       setImagePreview(URL.createObjectURL(file));
     }
-  };
+  }, []);
 
-  const handleImageUpload = async () => {
+  const handleImageUpload = useCallback(async () => {
     if (!imageFile || !selectedProduct) return;
     setActionLoading(true);
     try {
       const formData = new FormData();
       formData.append('image', imageFile);
-      await inventoryAPI.uploadImage(selectedProduct.id, formData);
-      setSuccess('Image uploaded successfully');
+      await uploadImageMutation.mutateAsync({ id: selectedProduct.id, formData });
       setShowImageModal(false);
       setImageFile(null);
       setImagePreview(null);
-      fetchProducts();
     } catch (err) {
-      setError(err.response?.data?.message || 'Image upload failed');
+      // Error handled in mutation
     } finally {
       setActionLoading(false);
     }
-  };
+  }, [imageFile, selectedProduct, uploadImageMutation]);
 
-  const handleImageDelete = async (productId) => {
+  const handleImageDelete = useCallback(async (productId) => {
     if (!window.confirm('Remove product image?')) return;
-    setActionLoading(true);
-    try {
-      await inventoryAPI.deleteImage(productId);
-      setSuccess('Image removed');
-      fetchProducts();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Image delete failed');
-    } finally {
-      setActionLoading(false);
-    }
-  };
+    await deleteImageMutation.mutateAsync(productId);
+    setShowImageModal(false);
+  }, [deleteImageMutation]);
 
   // ============================================================
   // HELPERS
   // ============================================================
-  const getCategoryName = (id) => categories.find((c) => c.id === id)?.name || 'N/A';
-  const getSupplierName = (id) => suppliers.find((s) => s.id === id)?.name || 'N/A';
+  const getCategoryName = useCallback((id) => categories.find((c) => c.id === id)?.name || 'N/A', [categories]);
+  const getSupplierName = useCallback((id) => suppliers.find((s) => s.id === id)?.name || 'N/A', [suppliers]);
 
-  const getStockBadge = (product) => {
+  const getStockBadge = useCallback((product) => {
     if (product.current_stock <= 0) return <Badge variant="destructive">Out of Stock</Badge>;
     if (product.min_stock > 0 && product.current_stock <= product.min_stock) return <Badge variant="warning">Low Stock</Badge>;
     return <Badge variant="success">In Stock</Badge>;
-  };
+  }, []);
 
   // ============================================================
   // RENDER
@@ -381,18 +317,6 @@ const Inventory = () => {
         </div>
       </div>
 
-      {/* Messages */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" /> {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
-          {success}
-        </div>
-      )}
-
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
@@ -402,7 +326,7 @@ const Inventory = () => {
               <Input
                 placeholder="Search by name, barcode, SKU..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9"
               />
             </div>
@@ -438,13 +362,12 @@ const Inventory = () => {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center justify-between">
             <span>Products ({total})</span>
+            {isFetching && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+          {isLoading ? (
+            <TableSkeleton rows={8} cols={8} />
           ) : products.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />

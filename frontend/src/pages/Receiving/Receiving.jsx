@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -6,22 +6,34 @@ import { default as Label } from '@/components/ui/Label';
 import { default as Select } from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
-import { receivingAPI, suppliersAPI, inventoryAPI } from '@/lib/api';
+import { useReceivingList, useSuppliers, useProducts } from '@/hooks/useQueries';
+import { useCreateReceiving, useUpdateReceiving } from '@/hooks/useMutations';
+import { receivingAPI } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { Loader2, Plus, Printer, Eye, X, Search, ChevronLeft, ChevronRight, Truck } from 'lucide-react';
+import { TableSkeleton } from '@/components/ui/Skeleton';
 
 const Receiving = () => {
   const navigate = useNavigate();
-  const [receivingList, setReceivingList] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewingReceiving, setViewingReceiving] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+
+  // Cached queries
+  const { data: receivingData, isLoading, refetch } = useReceivingList({ page, limit: 20 });
+  const { data: suppliers = [] } = useSuppliers();
+  const { data: productsData } = useProducts({ limit: 100 });
+  const products = productsData?.items || [];
+
+  const receivingList = receivingData?.items || [];
+  const totalPages = receivingData?.totalPages || 1;
+
+  // Mutations
+  const createReceivingMutation = useCreateReceiving();
+  const updateReceivingMutation = useUpdateReceiving();
 
   const [formData, setFormData] = useState({
     invoice_number: '',
@@ -38,45 +50,7 @@ const Receiving = () => {
     expiration_date: '',
   });
 
-  useEffect(() => {
-    loadReceiving();
-    loadSuppliers();
-    loadProducts();
-  }, [page]);
-
-  const loadReceiving = async () => {
-    try {
-      setLoading(true);
-      const response = await receivingAPI.getAll({ page, limit: 20 });
-      setReceivingList(response.data.items);
-      setTotalPages(response.data.totalPages);
-    } catch (error) {
-      toast.error('Failed to load receiving records');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadSuppliers = async () => {
-    try {
-      const response = await suppliersAPI.getAll();
-      setSuppliers(response.data?.items || []);
-    } catch (error) {
-      console.error('Failed to load suppliers', error);
-    }
-  };
-
-  const loadProducts = async () => {
-    try {
-      const response = await inventoryAPI.getAll({ limit: 100 });
-      setProducts(response.data.items);
-    } catch (error) {
-      console.error('Failed to load products', error);
-    }
-  };
-
-  const handleAddItem = () => {
+  const handleAddItem = useCallback(() => {
     if (!selectedProduct || itemDetails.quantity <= 0) {
       toast.error('Please select a product and enter valid quantity');
       return;
@@ -95,47 +69,24 @@ const Receiving = () => {
       expiration_date: itemDetails.expiration_date,
     };
 
-    setFormData({
-      ...formData,
-      items: [...formData.items, newItem],
-    });
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, newItem],
+    }));
 
     setSelectedProduct('');
-    setItemDetails({
-      quantity: 1,
-      cost_price: 0,
-      batch_number: '',
-      expiration_date: '',
-    });
-  };
+    setItemDetails({ quantity: 1, cost_price: 0, batch_number: '', expiration_date: '' });
+  }, [selectedProduct, itemDetails, products]);
 
-  const handleRemoveItem = (index) => {
-    setFormData({
-      ...formData,
-      items: formData.items.filter((_, i) => i !== index),
-    });
-  };
+  const removeItem = useCallback((index) => {
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index),
+    }));
+  }, []);
 
-  const handleBarcodeSearch = (e) => {
-    if (e.key === 'Enter') {
-      const product = products.find(p => p.barcode === e.target.value);
-      if (product) {
-        setSelectedProduct(product.id);
-        setItemDetails({
-          ...itemDetails,
-          cost_price: product.cost_price,
-        });
-        e.target.value = '';
-        toast.success(`Found: ${product.name}`);
-      } else {
-        toast.error('Product not found');
-      }
-    }
-  };
-
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-
     if (formData.items.length === 0) {
       toast.error('Please add at least one item');
       return;
@@ -143,475 +94,288 @@ const Receiving = () => {
 
     try {
       if (editingId) {
-        await receivingAPI.update(editingId, formData);
-        toast.success('Receiving updated successfully');
+        await updateReceivingMutation.mutateAsync({ id: editingId, data: formData });
       } else {
-        await receivingAPI.create(formData);
-        toast.success('Receiving created successfully');
+        await createReceivingMutation.mutateAsync(formData);
       }
-
-      resetForm();
-      loadReceiving();
-    } catch (error) {
-      toast.error(editingId ? 'Failed to update receiving' : 'Failed to create receiving');
-      console.error(error);
-    }
-  };
-
-  const handleEdit = async (id) => {
-    try {
-      const response = await receivingAPI.getById(id);
-      const receiving = response.data;
-
-      setFormData({
-        invoice_number: receiving.invoice_number || '',
-        supplier_id: receiving.supplier_id || '',
-        notes: receiving.notes || '',
-        items: receiving.items?.map(item => ({
-          product_id: item.product_id,
-          product_name: item.products?.name,
-          barcode: item.products?.barcode,
-          quantity: item.quantity,
-          cost_price: item.cost_price,
-          batch_number: item.batch_number,
-          expiration_date: item.expiration_date,
-        })) || [],
-      });
-
-      setEditingId(id);
-      setShowForm(true);
-      setViewingReceiving(null);
-    } catch (error) {
-      toast.error('Failed to load receiving details');
-      console.error(error);
-    }
-  };
-
-  const handleView = async (id) => {
-    try {
-      const response = await receivingAPI.getById(id);
-      setViewingReceiving(response.data);
       setShowForm(false);
       setEditingId(null);
-    } catch (error) {
-      toast.error('Failed to load receiving details');
-      console.error(error);
+      setFormData({ invoice_number: '', supplier_id: '', notes: '', items: [] });
+    } catch (err) {
+      // Error handled in mutation
     }
-  };
+  }, [formData, editingId, createReceivingMutation, updateReceivingMutation]);
 
-  const handlePrint = async (id) => {
+  const handleView = useCallback(async (id) => {
     try {
-      const response = await receivingAPI.print(id);
-      const blob = new Blob([response.data], { type: 'text/html' });
-      const url = window.URL.createObjectURL(blob);
-      const printWindow = window.open(url, '_blank');
-      printWindow?.print();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      toast.error('Failed to print receiving slip');
-      console.error(error);
+      const res = await receivingAPI.getById(id);
+      setViewingReceiving(res.data);
+    } catch (err) {
+      toast.error('Failed to load receiving details');
     }
-  };
+  }, []);
 
-  const resetForm = () => {
-    setFormData({
-      invoice_number: '',
-      supplier_id: '',
-      notes: '',
-      items: [],
-    });
-    setShowForm(false);
-    setEditingId(null);
-    setViewingReceiving(null);
-  };
-
-  const totalCost = formData.items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
+  const handlePrint = useCallback(async (id) => {
+    try {
+      const res = await receivingAPI.print(id);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      window.open(url, '_blank');
+    } catch (err) {
+      toast.error('Failed to print');
+    }
+  }, []);
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Item Receiving</h1>
-          <p className="text-sm text-gray-500">Receive stock from suppliers</p>
+          <h1 className="text-2xl font-bold text-gray-900">Receiving</h1>
+          <p className="text-sm text-gray-500">Manage incoming inventory</p>
         </div>
-        {!showForm && !viewingReceiving && (
-          <Button onClick={() => setShowForm(true)}>
-            + New Receiving
-          </Button>
-        )}
+        <Button onClick={() => { setShowForm(true); setEditingId(null); setFormData({ invoice_number: '', supplier_id: '', notes: '', items: [] }); }}>
+          <Plus className="h-4 w-4 mr-1" /> New Receiving
+        </Button>
       </div>
 
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editingId ? 'Edit Receiving' : 'New Receiving'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="invoice_number">Invoice Number</Label>
-                  <Input
-                    id="invoice_number"
-                    value={formData.invoice_number}
-                    onChange={(e) => setFormData({ ...formData, invoice_number: e.target.value })}
-                    placeholder="Enter invoice number"
-                  />
-                </div>
+      {/* Receiving List */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Receiving Records</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <TableSkeleton rows={5} cols={5} />
+          ) : receivingList.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <Truck className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No receiving records found</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Receiving #</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead className="text-right">Total Cost</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {receivingList.map((rec) => (
+                    <TableRow key={rec.id}>
+                      <TableCell className="font-mono text-xs">{rec.receiving_number}</TableCell>
+                      <TableCell>{new Date(rec.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell>{rec.suppliers?.name || 'N/A'}</TableCell>
+                      <TableCell>{rec.invoice_number || '—'}</TableCell>
+                      <TableCell className="text-right">₱{parseFloat(rec.total_cost || 0).toFixed(2)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleView(rec.id)} title="View">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handlePrint(rec.id)} title="Print">
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t mt-4">
+              <span className="text-sm text-gray-500">Page {page} of {totalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* New/Edit Receiving Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-lg font-semibold">{editingId ? 'Edit Receiving' : 'New Receiving'}</h2>
+              <Button variant="ghost" size="icon" onClick={() => { setShowForm(false); setEditingId(null); }}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="supplier">Supplier</Label>
-                  <Select
-                    id="supplier"
-                    value={formData.supplier_id}
-                    onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
-                  >
+                  <Label>Supplier</Label>
+                  <Select value={formData.supplier_id} onChange={(e) => setFormData(prev => ({ ...prev, supplier_id: e.target.value }))} required>
                     <option value="">Select supplier</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.name}
-                      </option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </Select>
                 </div>
-
-                <div className="md:col-span-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <Input
-                    id="notes"
+                <div>
+                  <Label>Invoice Number</Label>
+                  <Input value={formData.invoice_number} onChange={(e) => setFormData(prev => ({ ...prev, invoice_number: e.target.value }))} placeholder="Optional" />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Notes</Label>
+                  <textarea
                     value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Enter notes (optional)"
+                    onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                    className="w-full border rounded-lg p-2 text-sm"
+                    rows={2}
+                    placeholder="Optional notes..."
                   />
                 </div>
               </div>
 
-              <div className="border-t pt-4">
-                <h3 className="text-lg font-semibold mb-4">Add Items</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
-                  <div className="md:col-span-2">
-                    <Label htmlFor="barcode">Barcode Scanner</Label>
-                    <Input
-                      id="barcode"
-                      onKeyDown={handleBarcodeSearch}
-                      placeholder="Scan barcode or enter manually"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="product">Product</Label>
-                    <Select
-                      id="product"
-                      value={selectedProduct}
-                      onChange={(e) => {
-                        setSelectedProduct(e.target.value);
-                        const product = products.find(p => p.id === e.target.value);
-                        if (product) {
-                          setItemDetails({
-                            ...itemDetails,
-                            cost_price: product.cost_price,
-                          });
-                        }
-                      }}
-                    >
+              {/* Add Items */}
+              <div className="border rounded-lg p-4 space-y-4">
+                <h3 className="font-medium text-sm">Add Items</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                  <div className="sm:col-span-2">
+                    <Label>Product</Label>
+                    <Select value={selectedProduct} onChange={(e) => {
+                      const product = products.find(p => p.id === e.target.value);
+                      setSelectedProduct(e.target.value);
+                      if (product) {
+                        setItemDetails(prev => ({ ...prev, cost_price: product.cost_price || 0 }));
+                      }
+                    }}>
                       <option value="">Select product</option>
-                      {products.map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} ({product.barcode})
-                        </option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} - {p.barcode || p.sku}</option>
                       ))}
                     </Select>
                   </div>
-
                   <div>
-                    <Label htmlFor="quantity">Quantity</Label>
-                    <Input
-                      id="quantity"
-                      type="number"
-                      min="1"
-                      value={itemDetails.quantity}
-                      onChange={(e) => setItemDetails({ ...itemDetails, quantity: parseFloat(e.target.value) || 0 })}
-                    />
+                    <Label>Qty</Label>
+                    <Input type="number" min="1" value={itemDetails.quantity} onChange={(e) => setItemDetails(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))} />
                   </div>
-
                   <div>
-                    <Label htmlFor="cost_price">Unit Cost</Label>
-                    <Input
-                      id="cost_price"
-                      type="number"
-                      step="0.01"
-                      value={itemDetails.cost_price}
-                      onChange={(e) => setItemDetails({ ...itemDetails, cost_price: parseFloat(e.target.value) || 0 })}
-                    />
+                    <Label>Cost Price</Label>
+                    <Input type="number" step="0.01" min="0" value={itemDetails.cost_price} onChange={(e) => setItemDetails(prev => ({ ...prev, cost_price: parseFloat(e.target.value) || 0 }))} />
                   </div>
-
                   <div className="flex items-end">
                     <Button type="button" onClick={handleAddItem} className="w-full">
-                      Add Item
+                      <Plus className="h-4 w-4 mr-1" /> Add
                     </Button>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="batch_number">Batch Number</Label>
-                    <Input
-                      id="batch_number"
-                      value={itemDetails.batch_number}
-                      onChange={(e) => setItemDetails({ ...itemDetails, batch_number: e.target.value })}
-                      placeholder="Enter batch number"
-                    />
+                    <Label>Batch Number</Label>
+                    <Input value={itemDetails.batch_number} onChange={(e) => setItemDetails(prev => ({ ...prev, batch_number: e.target.value }))} placeholder="Optional" />
                   </div>
-
                   <div>
-                    <Label htmlFor="expiration_date">Expiration Date</Label>
-                    <Input
-                      id="expiration_date"
-                      type="date"
-                      value={itemDetails.expiration_date}
-                      onChange={(e) => setItemDetails({ ...itemDetails, expiration_date: e.target.value })}
-                    />
+                    <Label>Expiration Date</Label>
+                    <Input type="date" value={itemDetails.expiration_date} onChange={(e) => setItemDetails(prev => ({ ...prev, expiration_date: e.target.value }))} />
                   </div>
                 </div>
 
+                {/* Items List */}
                 {formData.items.length > 0 && (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Product</TableHead>
-                          <TableHead>Barcode</TableHead>
-                          <TableHead>Batch #</TableHead>
-                          <TableHead>Qty</TableHead>
-                          <TableHead>Unit Cost</TableHead>
-                          <TableHead>Subtotal</TableHead>
-                          <TableHead>Expiration</TableHead>
-                          <TableHead>Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {formData.items.map((item, index) => (
-                          <TableRow key={index}>
-                            <TableCell>{item.product_name}</TableCell>
-                            <TableCell>{item.barcode || 'N/A'}</TableCell>
-                            <TableCell>{item.batch_number || 'N/A'}</TableCell>
-                            <TableCell>{item.quantity}</TableCell>
-                            <TableCell>₱{item.cost_price.toFixed(2)}</TableCell>
-                            <TableCell>₱{(item.quantity * item.cost_price).toFixed(2)}</TableCell>
-                            <TableCell>{item.expiration_date ? new Date(item.expiration_date).toLocaleDateString() : 'N/A'}</TableCell>
-                            <TableCell>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleRemoveItem(index)}
-                              >
-                                Remove
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    <div className="bg-gray-50 p-4 text-right">
-                      <p className="text-lg font-bold">Total Cost: ₱{totalCost.toFixed(2)}</p>
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium mb-2">Items ({formData.items.length})</h4>
+                    <div className="space-y-2">
+                      {formData.items.map((item, index) => (
+                        <div key={index} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{item.product_name}</p>
+                            <p className="text-xs text-gray-500">
+                              Qty: {item.quantity} | Cost: ₱{parseFloat(item.cost_price).toFixed(2)}
+                              {item.batch_number && ` | Batch: ${item.batch_number}`}
+                              {item.expiration_date && ` | Exp: ${new Date(item.expiration_date).toLocaleDateString()}`}
+                            </p>
+                          </div>
+                          <button onClick={() => removeItem(index)} className="text-red-400 hover:text-red-600 p-1">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
               </div>
 
-              <div className="flex gap-4">
-                <Button type="submit" className="flex-1">
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" type="button" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel</Button>
+                <Button type="submit" isLoading={createReceivingMutation.isPending || updateReceivingMutation.isPending}>
                   {editingId ? 'Update Receiving' : 'Create Receiving'}
-                </Button>
-                <Button type="button" variant="secondary" onClick={resetForm}>
-                  Cancel
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
+      {/* View Receiving Modal */}
       {viewingReceiving && (
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>Receiving Details - {viewingReceiving.receiving_number}</CardTitle>
-              <div className="flex gap-2">
-                <Button onClick={() => handlePrint(viewingReceiving.id)} size="sm">
-                  Print Slip
-                </Button>
-                <Button onClick={() => handleEdit(viewingReceiving.id)} size="sm">
-                  Edit
-                </Button>
-                <Button onClick={resetForm} variant="secondary" size="sm">
-                  Back
-                </Button>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-lg font-semibold">Receiving Details</h2>
+              <Button variant="ghost" size="icon" onClick={() => setViewingReceiving(null)}>
+                <X className="h-5 w-5" />
+              </Button>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+            <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Receiving Number</p>
-                  <p className="font-medium">{viewingReceiving.receiving_number}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Invoice Number</p>
-                  <p className="font-medium">{viewingReceiving.invoice_number || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Supplier</p>
-                  <p className="font-medium">{viewingReceiving.suppliers?.name || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Received By</p>
-                  <p className="font-medium">{viewingReceiving.users?.name || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Date</p>
-                  <p className="font-medium">{new Date(viewingReceiving.created_at).toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total Cost</p>
-                  <p className="font-medium text-lg">₱{viewingReceiving.total_cost?.toFixed(2)}</p>
-                </div>
+                <div><label className="text-xs text-gray-500">Receiving #</label><p className="font-mono">{viewingReceiving.receiving_number}</p></div>
+                <div><label className="text-xs text-gray-500">Date</label><p>{new Date(viewingReceiving.created_at).toLocaleString()}</p></div>
+                <div><label className="text-xs text-gray-500">Supplier</label><p>{viewingReceiving.suppliers?.name || 'N/A'}</p></div>
+                <div><label className="text-xs text-gray-500">Invoice</label><p>{viewingReceiving.invoice_number || '—'}</p></div>
+                <div className="col-span-2"><label className="text-xs text-gray-500">Notes</label><p>{viewingReceiving.notes || '—'}</p></div>
               </div>
 
-              {viewingReceiving.notes && (
-                <div>
-                  <p className="text-sm text-gray-500">Notes</p>
-                  <p className="font-medium">{viewingReceiving.notes}</p>
-                </div>
-              )}
-
-              <div className="border rounded-lg overflow-hidden">
+              <div>
+                <h3 className="font-medium text-sm mb-2">Items</h3>
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Product</TableHead>
-                      <TableHead>Batch #</TableHead>
+                      <TableHead>Barcode</TableHead>
                       <TableHead>Qty</TableHead>
-                      <TableHead>Unit Cost</TableHead>
+                      <TableHead>Cost</TableHead>
                       <TableHead>Subtotal</TableHead>
-                      <TableHead>Expiration</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {viewingReceiving.items?.map((item, index) => (
-                      <TableRow key={index}>
-                        <TableCell>{item.products?.name || 'N/A'}</TableCell>
-                        <TableCell>{item.batch_number || 'N/A'}</TableCell>
+                    {(viewingReceiving.items || []).map((item, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{item.products?.name || item.product_name}</TableCell>
+                        <TableCell className="font-mono text-xs">{item.products?.barcode || '—'}</TableCell>
                         <TableCell>{item.quantity}</TableCell>
-                        <TableCell>₱{item.cost_price.toFixed(2)}</TableCell>
-                        <TableCell>₱{(item.quantity * item.cost_price).toFixed(2)}</TableCell>
-                        <TableCell>{item.expiration_date ? new Date(item.expiration_date).toLocaleDateString() : 'N/A'}</TableCell>
+                        <TableCell>₱{parseFloat(item.cost_price).toFixed(2)}</TableCell>
+                        <TableCell>₱{parseFloat((item.quantity * item.cost_price)).toFixed(2)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {!showForm && !viewingReceiving && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Receiving Records</CardTitle>
-            <div className="mt-4">
-              <Input
-                placeholder="Search by receiving number..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-8">Loading...</div>
-            ) : receivingList.length === 0 ? (
-              <div className="text-center text-gray-400 py-8">
-                No receiving records found
+              <div className="flex justify-between items-center pt-4 border-t">
+                <div className="text-lg font-bold">Total: ₱{parseFloat(viewingReceiving.total_cost || 0).toFixed(2)}</div>
+                <Button variant="outline" onClick={() => handlePrint(viewingReceiving.id)}>
+                  <Printer className="h-4 w-4 mr-1" /> Print
+                </Button>
               </div>
-            ) : (
-              <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Receiving #</TableHead>
-                      <TableHead>Invoice #</TableHead>
-                      <TableHead>Supplier</TableHead>
-                      <TableHead>Received By</TableHead>
-                      <TableHead>Total Cost</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {receivingList
-                      .filter((receiving) =>
-                        receiving.receiving_number.toLowerCase().includes(searchTerm.toLowerCase())
-                      )
-                      .map((receiving) => (
-                        <TableRow key={receiving.id}>
-                          <TableCell className="font-medium">{receiving.receiving_number}</TableCell>
-                          <TableCell>{receiving.invoice_number || 'N/A'}</TableCell>
-                          <TableCell>{receiving.suppliers?.name || 'N/A'}</TableCell>
-                          <TableCell>{receiving.users?.name || 'N/A'}</TableCell>
-                          <TableCell>₱{receiving.total_cost?.toFixed(2)}</TableCell>
-                          <TableCell>{new Date(receiving.created_at).toLocaleDateString()}</TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => handleView(receiving.id)}
-                              >
-                                View
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => handlePrint(receiving.id)}
-                              >
-                                Print
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
-
-                {totalPages > 1 && (
-                  <div className="flex justify-center gap-2 mt-4">
-                    <Button
-                      variant="secondary"
-                      onClick={() => setPage(page - 1)}
-                      disabled={page === 1}
-                    >
-                      Previous
-                    </Button>
-                    <span className="px-4 py-2">
-                      Page {page} of {totalPages}
-                    </span>
-                    <Button
-                      variant="secondary"
-                      onClick={() => setPage(page + 1)}
-                      disabled={page === totalPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

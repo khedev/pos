@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   Search, Barcode, ShoppingCart, Plus, Minus, Trash2, X, Printer,
   CreditCard, Banknote, Smartphone, Loader2, Package, AlertTriangle,
@@ -10,7 +10,8 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
-import { salesAPI, inventoryAPI, categoriesAPI } from '@/lib/api';
+import { useCategories, useProductSearch, useSales } from '@/hooks/useQueries';
+import { useCreateSale, useVoidTransaction } from '@/hooks/useMutations';
 import useAuthStore from '@/store/authStore';
 
 const PAYMENT_METHODS = [
@@ -31,9 +32,27 @@ const POS = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [categories, setCategories] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+
+  // Use cached categories (24h stale time)
+  const { data: categories = [] } = useCategories();
+
+  // Use cached product search (debounced via enabled)
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimerRef = useRef(null);
+
+  const handleSearchChange = useCallback((value) => {
+    setSearchQuery(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
+    }, 300);
+  }, []);
+
+  const { data: products = [], isFetching: searchLoading } = useProductSearch(
+    debouncedSearch,
+    categoryFilter,
+    !!debouncedSearch
+  );
 
   // Cart
   const [cart, setCart] = useState([]);
@@ -43,7 +62,6 @@ const POS = () => {
   // Payment
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [processing, setProcessing] = useState(false);
 
   // Modals
   const [showReceipt, setShowReceipt] = useState(null);
@@ -52,48 +70,27 @@ const POS = () => {
   const [showVoidDialog, setShowVoidDialog] = useState(null);
   const [voidReason, setVoidReason] = useState('');
 
-  // Transaction history
-  const [transactions, setTransactions] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  // Mutations
+  const createSaleMutation = useCreateSale();
+  const voidTransactionMutation = useVoidTransaction();
 
-  // Load categories
-  useEffect(() => {
-    categoriesAPI.getAll().then(res => setCategories(res.data?.items || [])).catch(() => {});
-  }, []);
-
-  // Search products
-  const searchProducts = useCallback(async (query) => {
-    if (!query) { setProducts([]); return; }
-    setSearchLoading(true);
-    try {
-      const params = { search: query, limit: 20 };
-      if (categoryFilter) params.category = categoryFilter;
-      const res = await inventoryAPI.getAll(params);
-      setProducts(res.data.items || []);
-    } catch (err) {
-      toast.error('Search failed');
-      setProducts([]);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [categoryFilter]);
-
-  // Debounced search
-  useEffect(() => {
-    const timer = setTimeout(() => searchProducts(searchQuery), 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery, searchProducts]);
+  // Transaction history (cached)
+  const { data: transactionsData, isFetching: historyLoading, refetch: loadTransactions } = useSales(
+    { limit: 50 },
+    { enabled: showHistory } // Only fetch when history panel is open
+  );
+  const transactions = transactionsData?.items || [];
 
   // Barcode handler
-  const handleBarcode = (e) => {
+  const handleBarcode = useCallback((e) => {
     if (e.key === 'Enter' && barcodeInput) {
-      searchProducts(barcodeInput);
+      setDebouncedSearch(barcodeInput);
       setBarcodeInput('');
     }
-  };
+  }, [barcodeInput]);
 
   // Add to cart
-  const addToCart = (product) => {
+  const addToCart = useCallback((product) => {
     if (Number(product.current_stock) <= 0) {
       toast.error(`${product.name} is out of stock`);
       return;
@@ -124,10 +121,10 @@ const POS = () => {
       }];
     });
     toast.success(`${product.name} added to cart`);
-  };
+  }, []);
 
   // Update cart quantity
-  const updateQuantity = (productId, delta) => {
+  const updateQuantity = useCallback((productId, delta) => {
     setCart(prev => prev.map(item => {
       if (item.product_id !== productId) return item;
       const newQty = item.quantity + delta;
@@ -138,38 +135,49 @@ const POS = () => {
       }
       return { ...item, quantity: newQty, subtotal: newQty * item.price };
     }).filter(Boolean));
-  };
+  }, []);
 
-  const removeFromCart = (productId) => {
+  const removeFromCart = useCallback((productId) => {
     setCart(prev => prev.filter(item => item.product_id !== productId));
-  };
+  }, []);
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCart([]);
     setOverallDiscount(0);
     setDiscountType('none');
     setPaymentAmount('');
-  };
+  }, []);
 
-  // Cart calculations
-  const subtotal = cart.reduce((sum, item) => sum + (item.quantity * item.price), 0);
-  const itemDiscounts = cart.reduce((sum, item) => sum + (item.discount || 0), 0);
-  const afterItemDiscounts = subtotal - itemDiscounts;
-  const vat = afterItemDiscounts * (0.12 / 1.12);
-  const discountAmount = overallDiscount || 0;
-  const total = Math.max(0, afterItemDiscounts - discountAmount);
-  const paymentAmt = parseFloat(paymentAmount) || 0;
-  const change = paymentAmt >= total ? paymentAmt - total : 0;
+  // Memoized cart calculations
+  const { subtotal, itemDiscounts, afterItemDiscounts, vat, discountAmount, total, paymentAmt, change } = useMemo(() => {
+    const sub = cart.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const itemDisc = cart.reduce((sum, item) => sum + (item.discount || 0), 0);
+    const afterItem = sub - itemDisc;
+    const v = afterItem * (0.12 / 1.12);
+    const discAmt = overallDiscount || 0;
+    const tot = Math.max(0, afterItem - discAmt);
+    const payAmt = parseFloat(paymentAmount) || 0;
+    const chg = payAmt >= tot ? payAmt - tot : 0;
+    return {
+      subtotal: sub,
+      itemDiscounts: itemDisc,
+      afterItemDiscounts: afterItem,
+      vat: v,
+      discountAmount: discAmt,
+      total: tot,
+      paymentAmt: payAmt,
+      change: chg,
+    };
+  }, [cart, overallDiscount, paymentAmount]);
 
   // Complete sale
-  const handleCheckout = async () => {
+  const handleCheckout = useCallback(async () => {
     if (cart.length === 0) { toast.error('Cart is empty'); return; }
     if (paymentAmt < total && paymentMethod === 'cash') {
       toast.error('Insufficient payment amount');
       return;
     }
 
-    setProcessing(true);
     try {
       const payload = {
         items: cart.map(item => ({
@@ -185,56 +193,39 @@ const POS = () => {
         discount_amount: discountAmount,
       };
 
-      const res = await salesAPI.create(payload);
+      const res = await createSaleMutation.mutateAsync(payload);
       setReceiptItems([...cart]);
       setShowReceipt(res.data);
       clearCart();
-      toast.success('Sale completed!');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Checkout failed');
-    } finally {
-      setProcessing(false);
+      // Error handled in mutation
     }
-  };
+  }, [cart, paymentMethod, paymentAmt, total, discountType, discountAmount, createSaleMutation, clearCart]);
 
   // Void transaction
-  const handleVoid = async () => {
+  const handleVoid = useCallback(async () => {
     if (!voidReason) { toast.error('Void reason is required'); return; }
     try {
-      await salesAPI.voidTransaction(showVoidDialog, { reason: voidReason });
-      toast.success('Transaction voided');
+      await voidTransactionMutation.mutateAsync({ id: showVoidDialog, data: { reason: voidReason } });
       setShowVoidDialog(null);
       setVoidReason('');
-      loadTransactions();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Void failed');
+      // Error handled in mutation
     }
-  };
-
-  // Load transactions
-  const loadTransactions = useCallback(async () => {
-    setHistoryLoading(true);
-    try {
-      const res = await salesAPI.getAll({ limit: 50 });
-      setTransactions(res.data.items || []);
-    } catch (err) {
-      console.error('Failed to load transactions');
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
+  }, [voidReason, showVoidDialog, voidTransactionMutation]);
 
   // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'F1') { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === 'F2') { e.preventDefault(); handleCheckout(); }
-      if (e.key === 'F3') { e.preventDefault(); clearCart(); }
-      if (e.key === 'Escape') { setShowReceipt(null); setShowVoidDialog(null); }
-    };
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'F1') { e.preventDefault(); searchRef.current?.focus(); }
+    if (e.key === 'F2') { e.preventDefault(); handleCheckout(); }
+    if (e.key === 'F3') { e.preventDefault(); clearCart(); }
+    if (e.key === 'Escape') { setShowReceipt(null); setShowVoidDialog(null); }
+  }, [handleCheckout, clearCart]);
+
+  React.useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, paymentMethod, paymentAmount, discountType, overallDiscount]);
+  }, [handleKeyDown]);
 
   return (
     <div className="h-full">
@@ -243,7 +234,7 @@ const POS = () => {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Point of Sale</h1>
           <p className="text-xs sm:text-sm text-gray-500 hidden sm:block">F1: Search | F2: Checkout | F3: Clear | Esc: Close</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadTransactions(); }} className="flex-shrink-0">
+        <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="flex-shrink-0">
           <History className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">{showHistory ? 'Hide' : 'History'}</span>
         </Button>
       </div>
@@ -272,7 +263,7 @@ const POS = () => {
                   <Input
                     placeholder="Search products..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => handleSearchChange(e.target.value)}
                     className="pl-9"
                   />
                 </div>
@@ -460,12 +451,12 @@ const POS = () => {
               {/* Checkout Button */}
               <Button
                 onClick={handleCheckout}
-                disabled={cart.length === 0 || (paymentMethod === 'cash' && paymentAmt < total) || processing}
-                isLoading={processing}
+                disabled={cart.length === 0 || (paymentMethod === 'cash' && paymentAmt < total) || createSaleMutation.isPending}
+                isLoading={createSaleMutation.isPending}
                 className="w-full"
                 size="lg"
               >
-                {processing ? 'Processing...' : `Complete Sale (${formatCurrency(total)})`}
+                {createSaleMutation.isPending ? 'Processing...' : `Complete Sale (${formatCurrency(total)})`}
               </Button>
             </CardContent>
           </Card>

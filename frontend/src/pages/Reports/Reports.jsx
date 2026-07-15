@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
-  FileText, Download, Loader2, Search, Calendar, Filter,
+  FileText, Download, Loader2, Calendar, Filter,
   TrendingUp, Package, Truck, AlertTriangle, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
@@ -8,13 +8,15 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import toast from 'react-hot-toast';
-import { reportsAPI, categoriesAPI, suppliersAPI } from '@/lib/api';
+import { useSalesReport, useItemSalesReport, useInventoryReport, useReceivingReport, useSuppliers } from '@/hooks/useQueries';
+import { reportsAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { TableSkeleton } from '@/components/ui/Skeleton';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 const formatCurrency = (v) => `₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
@@ -35,76 +37,28 @@ const SummaryCard = ({ title, value, color = 'text-gray-900' }) => (
 
 const Reports = () => {
   const [activeTab, setActiveTab] = useState('sales');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
   // Date filters
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [period, setPeriod] = useState('daily');
 
-  // Data
-  const [salesData, setSalesData] = useState({ data: [], summary: null });
-  const [itemSalesData, setItemSalesData] = useState({ items: [], bestSellers: [], slowMoving: [], summary: null });
-  const [inventoryData, setInventoryData] = useState({ items: [], expiring: [], summary: null });
-  const [receivingData, setReceivingData] = useState({ data: [], summary: null });
-
-  // Filters
+  // Additional filters
   const [inventoryFilter, setInventoryFilter] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
-  const [suppliers, setSuppliers] = useState([]);
 
   // Pagination
   const [page, setPage] = useState(1);
   const limit = 20;
 
-  // Load suppliers once
-  useEffect(() => {
-    suppliersAPI.getAll().then(res => setSuppliers(res.data?.items || [])).catch(() => {});
-  }, []);
+  // Cached queries with filter-based keys
+  const salesReport = useSalesReport({ startDate, endDate, period });
+  const itemSalesReport = useItemSalesReport({ startDate, endDate });
+  const inventoryReport = useInventoryReport(inventoryFilter);
+  const receivingReport = useReceivingReport({ startDate, endDate, supplier_id: supplierFilter || undefined });
+  const { data: suppliers = [] } = useSuppliers();
 
-  // Fetch data based on tab
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = {};
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
-
-      switch (activeTab) {
-        case 'sales': {
-          const res = await reportsAPI.getSales({ ...params, period });
-          setSalesData(res.data);
-          break;
-        }
-        case 'products': {
-          const res = await reportsAPI.getItemSales(params);
-          setItemSalesData(res.data);
-          break;
-        }
-        case 'inventory': {
-          const res = await reportsAPI.getInventory({ filter: inventoryFilter || undefined });
-          setInventoryData(res.data);
-          break;
-        }
-        case 'receiving': {
-          const res = await reportsAPI.getReceiving({ ...params, supplier_id: supplierFilter || undefined });
-          setReceivingData(res.data);
-          break;
-        }
-      }
-    } catch (err) {
-      setError('Failed to load report data');
-      toast.error('Failed to load report');
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab, startDate, endDate, period, inventoryFilter, supplierFilter]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const handleExport = async (type, format) => {
+  const handleExport = useCallback(async (type, format) => {
     try {
       const params = {};
       if (startDate) params.startDate = startDate;
@@ -130,13 +84,14 @@ const Reports = () => {
     } catch (err) {
       toast.error('Export failed');
     }
-  };
+  }, [startDate, endDate]);
 
   const renderSalesTab = () => {
-    const { data, summary } = salesData;
-    if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
-    if (error) return <div className="text-center py-12 text-red-500">{error}</div>;
+    const { data: salesData, isLoading, error } = salesReport;
+    if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+    if (error) return <div className="text-center py-12 text-red-500">Failed to load sales data</div>;
 
+    const { data = [], summary } = salesData || {};
     const trendData = (data || []).reduce((acc, sale) => {
       const date = new Date(sale.created_at).toLocaleDateString();
       if (!acc[date]) acc[date] = { date, sales: 0, count: 0 };
@@ -145,7 +100,6 @@ const Reports = () => {
       return acc;
     }, {});
     const trendChart = Object.values(trendData);
-
     const paymentData = summary?.paymentBreakdown?.map(p => ({ name: p.method.toUpperCase(), value: p.total })) || [];
 
     return (
@@ -193,7 +147,6 @@ const Reports = () => {
           </Card>
         </div>
 
-        {/* Sales table */}
         <Card>
           <CardHeader><CardTitle className="text-lg">Transactions</CardTitle></CardHeader>
           <CardContent>
@@ -230,9 +183,11 @@ const Reports = () => {
   };
 
   const renderProductsTab = () => {
-    const { bestSellers, slowMoving, summary } = itemSalesData;
-    if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
-    if (error) return <div className="text-center py-12 text-red-500">{error}</div>;
+    const { data: itemSalesData, isLoading, error } = itemSalesReport;
+    if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+    if (error) return <div className="text-center py-12 text-red-500">Failed to load products data</div>;
+
+    const { bestSellers = [], slowMoving = [], summary } = itemSalesData || {};
 
     return (
       <div className="space-y-6">
@@ -288,7 +243,6 @@ const Reports = () => {
           </Card>
         </div>
 
-        {/* Profit chart */}
         {bestSellers?.length > 0 && (
           <Card>
             <CardHeader><CardTitle className="text-lg">Top Products - Revenue vs Profit</CardTitle></CardHeader>
@@ -314,9 +268,11 @@ const Reports = () => {
   };
 
   const renderInventoryTab = () => {
-    const { items, expiring, summary } = inventoryData;
-    if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
-    if (error) return <div className="text-center py-12 text-red-500">{error}</div>;
+    const { data: inventoryData, isLoading, error } = inventoryReport;
+    if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+    if (error) return <div className="text-center py-12 text-red-500">Failed to load inventory data</div>;
+
+    const { items = [], expiring = [], summary } = inventoryData || {};
 
     return (
       <div className="space-y-6">
@@ -411,9 +367,11 @@ const Reports = () => {
   };
 
   const renderReceivingTab = () => {
-    const { data, summary } = receivingData;
-    if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
-    if (error) return <div className="text-center py-12 text-red-500">{error}</div>;
+    const { data: receivingData, isLoading, error } = receivingReport;
+    if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+    if (error) return <div className="text-center py-12 text-red-500">Failed to load receiving data</div>;
+
+    const { data = [], summary } = receivingData || {};
 
     return (
       <div className="space-y-6">
@@ -460,6 +418,11 @@ const Reports = () => {
     );
   };
 
+  const handleTabChange = useCallback((tabId) => {
+    setActiveTab(tabId);
+    setPage(1);
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -474,7 +437,7 @@ const Reports = () => {
         {TABS.map(tab => (
           <button
             key={tab.id}
-            onClick={() => { setActiveTab(tab.id); setPage(1); }}
+            onClick={() => handleTabChange(tab.id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               activeTab === tab.id ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
@@ -521,7 +484,6 @@ const Reports = () => {
               </Select>
             )}
 
-            {/* Export buttons */}
             {(activeTab === 'sales') && (
               <div className="flex gap-2 ml-auto">
                 <Button variant="outline" size="sm" onClick={() => handleExport('sales', 'pdf')}>
@@ -532,10 +494,6 @@ const Reports = () => {
                 </Button>
               </div>
             )}
-
-            <Button variant="outline" size="sm" onClick={fetchData} className="ml-auto">
-              <Filter className="h-4 w-4 mr-1" /> Refresh
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -547,9 +505,9 @@ const Reports = () => {
       {activeTab === 'receiving' && renderReceivingTab()}
 
       {/* Pagination */}
-      {((activeTab === 'sales' && salesData.data?.length > limit) ||
-        (activeTab === 'inventory' && inventoryData.items?.length > limit) ||
-        (activeTab === 'receiving' && receivingData.data?.length > limit)) && (
+      {((activeTab === 'sales' && (salesReport.data?.data?.length || 0) > limit) ||
+        (activeTab === 'inventory' && (inventoryReport.data?.items?.length || 0) > limit) ||
+        (activeTab === 'receiving' && (receivingReport.data?.data?.length || 0) > limit)) && (
         <div className="flex items-center justify-between pt-4">
           <span className="text-sm text-gray-500">Page {page}</span>
           <div className="flex gap-2">

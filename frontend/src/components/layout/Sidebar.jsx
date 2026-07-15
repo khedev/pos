@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, Package, Truck, BarChart3,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import useAuthStore from '@/store/authStore';
+import { usePrefetch } from '@/hooks/usePrefetch';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -52,6 +53,7 @@ const Sidebar = ({ isMobileOpen, onMobileClose }) => {
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuthStore();
   const location = useLocation();
+  const { prefetchPage } = usePrefetch();
 
   useEffect(() => {
     if (isMobileOpen && onMobileClose) {
@@ -124,6 +126,8 @@ const Sidebar = ({ isMobileOpen, onMobileClose }) => {
                       <NavLink
                         key={item.path}
                         to={item.path}
+                        onMouseEnter={() => prefetchPage(item.path)}
+                        onFocus={() => prefetchPage(item.path)}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                           isActive
