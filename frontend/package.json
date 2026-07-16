@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:ssr": "node server.js",
-    "build": "vite build && vite build --ssr src/entry-server.jsx --outDir dist/server",
+    "build": "vite build && vite build --ssr src/entry-server.jsx",
     "build:client": "vite build",
-    "build:ssr": "vite build --ssr src/entry-server.jsx --outDir dist/server",
+    "build:ssr": "vite build --ssr src/entry-server.jsx",
     "preview": "vite preview",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
   },

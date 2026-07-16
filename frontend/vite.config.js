@@ -19,6 +19,7 @@ export default defineConfig(({ command, mode, isSsrBuild }) => {
       },
     },
     build: {
+      outDir: isSsrBuild ? 'dist/server' : 'dist/client',
       target: 'es2020',
       minify: 'terser',
       terserOptions: {
