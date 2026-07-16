@@ -1,5 +1,14 @@
+/**
+ * Application route definitions.
+ * SSR-compatible: exports a Routes component that works with
+ * both BrowserRouter (client) and StaticRouter (server).
+ *
+ * Usage:
+ *   <BrowserRouter><Routes /></BrowserRouter>  - Client
+ *   <StaticRouter><Routes /></StaticRouter>     - Server
+ */
 import React, { Suspense, lazy } from 'react';
-import { createBrowserRouter } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import RoleGuard from '@/components/RoleGuard';
@@ -28,66 +37,68 @@ const page = (element) => (
   </Suspense>
 );
 
-const router = createBrowserRouter([
-  {
-    path: '/login',
-    element: page(<LoginLayout />),
-    children: [
-      { index: true, element: page(<Login />) },
-      { path: 'forgot-password', element: page(<ForgotPassword />) },
-    ],
-  },
-  {
-    path: '/forgot-password',
-    element: page(<LoginLayout />),
-    children: [
-      { index: true, element: page(<ForgotPassword />) },
-    ],
-  },
-  {
-    path: '/reset-password',
-    element: page(<LoginLayout />),
-    children: [
-      { index: true, element: page(<ResetPassword />) },
-    ],
-  },
-  {
-    path: '/',
-    element: (
-      <ProtectedRoute>
-        <DashboardLayout />
-      </ProtectedRoute>
-    ),
-    children: [
-      { index: true, element: page(<Dashboard />) },
-      { path: 'dashboard', element: page(<Dashboard />) },
-      { path: 'pos', element: page(<POS />) },
-      { path: 'inventory', element: page(<Inventory />) },
-      { path: 'receiving', element: page(<Receiving />) },
-      { path: 'reports', element: page(<Reports />) },
-      { path: 'categories', element: page(<Categories />) },
-      { path: 'suppliers', element: page(<Suppliers />) },
-      { path: 'audit-log', element: page(<AuditLog />) },
-      { path: 'notifications', element: page(<Notifications />) },
-      { path: 'activity', element: page(<ActivityDashboard />) },
-      {
-        path: 'users',
-        element: page(
-          <RoleGuard requiredPermission="users.manage">
-            <Users />
-          </RoleGuard>
-        ),
-      },
-      {
-        path: 'settings',
-        element: page(
-          <RoleGuard requiredPermission="settings.manage">
-            <Settings />
-          </RoleGuard>
-        ),
-      },
-    ],
-  },
-]);
+/**
+ * AppRoutes component.
+ * Placed inside BrowserRouter (client) or StaticRouter (server).
+ * All lazy-loaded pages use Suspense for both SSR and client navigation.
+ */
+export function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public login routes */}
+      <Route path="/login" element={page(<LoginLayout />)}>
+        <Route index element={page(<Login />)} />
+        <Route path="forgot-password" element={page(<ForgotPassword />)} />
+      </Route>
+      <Route path="/forgot-password" element={page(<LoginLayout />)}>
+        <Route index element={page(<ForgotPassword />)} />
+      </Route>
+      <Route path="/reset-password" element={page(<LoginLayout />)}>
+        <Route index element={page(<ResetPassword />)} />
+      </Route>
 
-export default router;
+      {/* Protected dashboard routes */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={page(<Dashboard />)} />
+        <Route path="pos" element={page(<POS />)} />
+        <Route path="inventory" element={page(<Inventory />)} />
+        <Route path="receiving" element={page(<Receiving />)} />
+        <Route path="reports" element={page(<Reports />)} />
+        <Route path="categories" element={page(<Categories />)} />
+        <Route path="suppliers" element={page(<Suppliers />)} />
+        <Route path="audit-log" element={page(<AuditLog />)} />
+        <Route path="notifications" element={page(<Notifications />)} />
+        <Route path="activity" element={page(<ActivityDashboard />)} />
+        <Route
+          path="users"
+          element={page(
+            <RoleGuard requiredPermission="users.manage">
+              <Users />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="settings"
+          element={page(
+            <RoleGuard requiredPermission="settings.manage">
+              <Settings />
+            </RoleGuard>
+          )}
+        />
+      </Route>
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}
+
+export default AppRoutes;

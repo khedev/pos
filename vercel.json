@@ -2,7 +2,7 @@
   "installCommand": "pnpm install",
   "buildCommand": "pnpm run build",
   "framework": null,
-  "outputDirectory": "frontend/dist",
+  "outputDirectory": "frontend/dist/client",
   "headers": [
     {
       "source": "/assets/(.*)",
@@ -53,11 +53,16 @@
       ]
     }
   ],
-  "redirects": [
+  "rewrites": [
     {
-      "source": "/login",
-      "destination": "/login",
-      "permanent": true
+      "source": "/((?!api/).*)",
+      "destination": "/api/ssr"
     }
-  ]
+  ],
+  "functions": {
+    "api/ssr.js": {
+      "memory": 512,
+      "maxDuration": 30
+    }
+  }
 }

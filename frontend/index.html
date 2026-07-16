@@ -32,10 +32,6 @@
       />
     </noscript>
 
-    <!-- Prefetch likely next pages -->
-    <link rel="prefetch" href="/src/pages/Login/Login.jsx" as="script" />
-    <link rel="prefetch" href="/src/pages/Dashboard/Dashboard.jsx" as="script" />
-
     <title>PGPOS - Pharmacy & Grocery POS</title>
 
     <!-- Inline critical CSS to prevent FOUC -->
@@ -48,7 +44,7 @@
     </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <div id="root"><!--ssr-outlet--></div>
+    <script type="module" src="/src/entry-client.jsx"></script>
   </body>
 </html>

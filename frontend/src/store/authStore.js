@@ -2,11 +2,18 @@ import { create } from 'zustand';
 import { authAPI } from '@/lib/api';
 
 const useAuthStore = create((set, get) => ({
-  user: JSON.parse(localStorage.getItem('pgpos_user') || 'null'),
-  token: localStorage.getItem('pgpos_token') || null,
-  isAuthenticated: !!localStorage.getItem('pgpos_token'),
+  user: JSON.parse(
+    (typeof window !== 'undefined' ? localStorage.getItem('pgpos_user') : null) || 'null'
+  ),
+  token: typeof window !== 'undefined' ? localStorage.getItem('pgpos_token') : null,
+  isAuthenticated: typeof window !== 'undefined' ? !!localStorage.getItem('pgpos_token') : false,
   isLoading: false,
   error: null,
+
+  // SSR-compatible setters (used by AuthProvider during hydration)
+  setUser: (user) => set({ user }),
+  setToken: (token) => set({ token }),
+  setAuthenticated: (value) => set({ isAuthenticated: value }),
 
   login: async (email, password, rememberMe = false) => {
     set({ isLoading: true, error: null });
@@ -14,11 +21,17 @@ const useAuthStore = create((set, get) => ({
       const response = await authAPI.login({ email, password });
       const { user, token, refreshToken } = response.data;
 
-      localStorage.setItem('pgpos_token', token);
-      localStorage.setItem('pgpos_user', JSON.stringify(user));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pgpos_token', token);
+        localStorage.setItem('pgpos_user', JSON.stringify(user));
 
-      if (rememberMe) {
-        localStorage.setItem('pgpos_refresh_token', refreshToken);
+        // Set cookies for SSR — the server reads these on subsequent requests
+        document.cookie = `pgpos_token=${token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}`;
+        document.cookie = `pgpos_user=${encodeURIComponent(JSON.stringify(user))}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}`;
+
+        if (rememberMe) {
+          localStorage.setItem('pgpos_refresh_token', refreshToken);
+        }
       }
 
       set({
@@ -43,9 +56,16 @@ const useAuthStore = create((set, get) => ({
     } catch (error) {
       // Ignore logout errors
     } finally {
-      localStorage.removeItem('pgpos_token');
-      localStorage.removeItem('pgpos_refresh_token');
-      localStorage.removeItem('pgpos_user');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('pgpos_token');
+        localStorage.removeItem('pgpos_refresh_token');
+        localStorage.removeItem('pgpos_user');
+
+        // Clear auth cookies
+        document.cookie = 'pgpos_token=; path=/; max-age=0; SameSite=Lax';
+        document.cookie = 'pgpos_user=; path=/; max-age=0; SameSite=Lax';
+      }
+
       set({
         user: null,
         token: null,
@@ -57,7 +77,7 @@ const useAuthStore = create((set, get) => ({
   },
 
   checkAuth: async () => {
-    const token = localStorage.getItem('pgpos_token');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pgpos_token') : null;
     if (!token) {
       set({ isAuthenticated: false, user: null });
       return;
@@ -69,11 +89,15 @@ const useAuthStore = create((set, get) => ({
         user: response.data,
         isAuthenticated: true,
       });
-      localStorage.setItem('pgpos_user', JSON.stringify(response.data));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pgpos_user', JSON.stringify(response.data));
+      }
     } catch (error) {
-      localStorage.removeItem('pgpos_token');
-      localStorage.removeItem('pgpos_refresh_token');
-      localStorage.removeItem('pgpos_user');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('pgpos_token');
+        localStorage.removeItem('pgpos_refresh_token');
+        localStorage.removeItem('pgpos_user');
+      }
       set({
         user: null,
         token: null,

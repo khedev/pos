@@ -1,7 +1,16 @@
 import axios from 'axios';
 
+/**
+ * SSR-safe API client.
+ * On the server, localStorage is not available, so we use a fallback.
+ * Auth tokens come from cookies on the server and from localStorage on the client.
+ */
+
+// Check if we're running on the server
+const isServer = typeof window === 'undefined';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: (isServer ? process.env.API_URL : import.meta.env.VITE_API_URL) || '/api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -10,22 +19,26 @@ const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('pgpos_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    if (!isServer) {
+      const token = localStorage.getItem('pgpos_token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     }
+    // On the server, auth headers are set via server-side API calls
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for token refresh
+// Response interceptor for token refresh (client-side only)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Only handle 401 refresh on the client
+    if (!isServer && error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {
