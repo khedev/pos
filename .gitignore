@@ -4,6 +4,9 @@ node_modules/
 .pnp.js
 **/node_modules/
 
+# Lockfiles (monorepo uses root pnpm-lock.yaml only)
+*/pnpm-lock.yaml
+
 # Build output
 dist/
 build/
