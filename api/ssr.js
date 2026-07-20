@@ -111,19 +111,43 @@ function setCachingHeaders(res, pathname, isAuthenticated) {
  * Main request handler for Vercel Serverless Function.
  */
 export default async function handler(req, res) {
+  // Set a hard timeout on the entire request
+  // Vercel Hobby plan: 10s max; Pro: 30s (configurable)
+  const REQUEST_TIMEOUT = 9000; // 9 seconds — leaves 1s buffer to Vercel's 10s limit
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    console.error('[SSR] Request timed out after 9s — sending CSR fallback');
+    try {
+      const fallbackHtml = fs.readFileSync(
+        path.resolve(CLIENT_DIST, 'index.html'),
+        'utf-8'
+      );
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.status(200).send(fallbackHtml);
+    } catch (fbErr) {
+      res.status(500).send('Timeout retrieving page');
+    }
+  }, REQUEST_TIMEOUT);
+
+  const safeRespond = (fn) => {
+    if (timedOut) return;
+    clearTimeout(timeout);
+    fn();
+  };
+
   try {
     const url = req.url;
 
     // Skip API routes — they're handled by the backend
     if (url.startsWith('/api/') && !url.startsWith('/api/ssr')) {
-      res.status(404).json({ error: 'API routes are handled by the backend' });
+      safeRespond(() => res.status(404).json({ error: 'API routes are handled by the backend' }));
       return;
     }
 
     // Skip static assets (served directly by Vercel's static file serving)
     if (url.startsWith('/assets/') || url.match(/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|webp|avif|ico)$/)) {
-      // If we get here, the file wasn't found as a static asset
-      res.status(404).json({ error: 'Static asset not found' });
+      safeRespond(() => res.status(404).json({ error: 'Static asset not found' }));
       return;
     }
 
@@ -157,7 +181,10 @@ export default async function handler(req, res) {
     // Send the fully rendered HTML
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(200).send(finalHtml);
+    clearTimeout(timeout);
   } catch (error) {
+    if (timedOut) return; // Already responded from timeout handler
+    clearTimeout(timeout);
     console.error('[SSR] Error:', error.message);
 
     // CSR fallback: if SSR fails, send the client-side app
