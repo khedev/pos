@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import {
   Bell, Loader2, CheckCheck, Trash2, X, Info, AlertTriangle,
   AlertCircle, Package, ShoppingCart, Truck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { notificationsAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import Badge from '@/components/ui/Badge';
+import { useNotifications, useUnreadNotificationCount } from '@/hooks/useQueries';
+import { useMarkNotificationRead, useMarkAllNotificationsRead, useDeleteNotification } from '@/hooks/useMutations';
 
 const TYPE_ICONS = {
   info: Info,
@@ -28,52 +28,20 @@ const TYPE_COLORS = {
 };
 
 const Notifications = () => {
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
+  // Cached queries with polling
+  const { data: notificationsData, isLoading, isFetching } = useNotifications({ limit: 50 });
+  const { data: unreadCount = 0 } = useUnreadNotificationCount();
 
-  const fetchNotifications = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [listRes, countRes] = await Promise.all([
-        notificationsAPI.getAll({ limit: 50 }),
-        notificationsAPI.getUnreadCount(),
-      ]);
-      setNotifications(listRes.data?.items || listRes.data || []);
-      setUnreadCount(countRes.data?.count || 0);
-    } catch (err) {
-      console.error('Failed to load notifications');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const notifications = notificationsData?.items || notificationsData || [];
 
-  useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
+  // Mutations
+  const markReadMutation = useMarkNotificationRead();
+  const markAllReadMutation = useMarkAllNotificationsRead();
+  const deleteMutation = useDeleteNotification();
 
-  const handleMarkRead = async (id) => {
-    try {
-      await notificationsAPI.markRead(id);
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-      setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (err) { toast.error('Failed to mark as read'); }
-  };
-
-  const handleMarkAllRead = async () => {
-    try {
-      await notificationsAPI.markAllRead();
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-      setUnreadCount(0);
-      toast.success('All notifications marked as read');
-    } catch (err) { toast.error('Failed to mark all as read'); }
-  };
-
-  const handleDelete = async (id) => {
-    try {
-      await notificationsAPI.delete(id);
-      setNotifications(prev => prev.filter(n => n.id !== id));
-      toast.success('Notification deleted');
-    } catch (err) { toast.error('Failed to delete'); }
-  };
+  const handleMarkRead = (id) => markReadMutation.mutate(id);
+  const handleMarkAllRead = () => markAllReadMutation.mutate();
+  const handleDelete = (id) => deleteMutation.mutate(id);
 
   return (
     <div className="space-y-6">
@@ -85,7 +53,7 @@ const Notifications = () => {
           </p>
         </div>
         {unreadCount > 0 && (
-          <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
+          <Button variant="outline" size="sm" onClick={handleMarkAllRead} isLoading={markAllReadMutation.isPending}>
             <CheckCheck className="h-4 w-4 mr-1" /> Mark All Read
           </Button>
         )}
@@ -93,7 +61,7 @@ const Notifications = () => {
 
       <Card>
         <CardContent className="p-4">
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>
           ) : notifications.length === 0 ? (
             <div className="text-center py-12 text-gray-400">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Users as UsersIcon, Plus, Edit, Trash2, Loader2, Search,
   Shield, UserCheck, UserX, Key, ChevronLeft, ChevronRight,
@@ -13,6 +13,8 @@ import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import Modal from '@/components/modal/Modal';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { useUsers } from '@/hooks/useQueries';
+import { useCreateUser, useUpdateUser, useResetUserPassword } from '@/hooks/useMutations';
 
 const ROLES = [
   { value: 'admin', label: 'Admin', color: 'bg-red-100 text-red-800' },
@@ -25,99 +27,75 @@ const INITIAL_USER = { name: '', email: '', password: '', role: 'cashier' };
 
 const Users = () => {
   const { user: currentUser } = useAuthStore();
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [total, setTotal] = useState(0);
 
   // Modal
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const [selectedUser, setSelectedUser] = useState(null);
   const [formData, setFormData] = useState(INITIAL_USER);
-  const [actionLoading, setActionLoading] = useState(false);
+  const limit = 20;
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = { page, limit: 20 };
-      if (search) params.search = search;
-      const res = await usersAPI.getAll(params);
-      setUsers(res.data.users || []);
-      setTotal(res.data.total || 0);
-      setTotalPages(res.data.totalPages || 0);
-    } catch (err) {
-      setError('Failed to load users');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search]);
+  // Cached query
+  const { data: usersData, isLoading, isFetching, refetch } = useUsers({ page, limit, search });
+  const users = usersData?.users || [];
+  const total = usersData?.total || 0;
+  const totalPages = usersData?.totalPages || 0;
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  // Mutations
+  const createMutation = useCreateUser();
+  const updateMutation = useUpdateUser();
+  const resetPasswordMutation = useResetUserPassword();
 
-  const openAddModal = () => {
+  const openAddModal = useCallback(() => {
     setModalMode('add');
     setFormData(INITIAL_USER);
     setSelectedUser(null);
     setShowModal(true);
-  };
+  }, []);
 
-  const openEditModal = (user) => {
+  const openEditModal = useCallback((user) => {
     setModalMode('edit');
     setSelectedUser(user);
     setFormData({ name: user.name, email: user.email, role: user.role, password: '' });
     setShowModal(true);
-  };
+  }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    setActionLoading(true);
     try {
       if (modalMode === 'add') {
-        await usersAPI.create(formData);
-        toast.success('User created successfully');
+        await createMutation.mutateAsync(formData);
       } else {
         const payload = { name: formData.name, email: formData.email, role: formData.role };
         if (formData.password) payload.password = formData.password;
-        await usersAPI.update(selectedUser.id, payload);
-        toast.success('User updated successfully');
+        await updateMutation.mutateAsync({ id: selectedUser.id, data: payload });
       }
       setShowModal(false);
-      fetchUsers();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Operation failed');
-    } finally {
-      setActionLoading(false);
+      // Error handled in mutation
     }
-  };
+  }, [formData, modalMode, selectedUser, createMutation, updateMutation]);
 
-  const handleToggleActive = async (user) => {
+  const handleToggleActive = useCallback(async (user) => {
     try {
       await usersAPI.update(user.id, { is_active: !user.is_active });
       toast.success(`User ${user.is_active ? 'deactivated' : 'activated'}`);
-      fetchUsers();
+      refetch();
     } catch (err) {
       toast.error('Failed to update user');
     }
-  };
+  }, [refetch]);
 
-  const handleResetPassword = async (user) => {
+  const handleResetPassword = useCallback((user) => {
     const newPassword = prompt('Enter new password (min 8 characters):');
     if (!newPassword || newPassword.length < 8) {
       toast.error('Password must be at least 8 characters');
       return;
     }
-    try {
-      await usersAPI.update(user.id, { password: newPassword });
-      toast.success('Password reset successfully');
-    } catch (err) {
-      toast.error('Failed to reset password');
-    }
-  };
+    resetPasswordMutation.mutate({ id: user.id, data: { password: newPassword } });
+  }, [resetPasswordMutation]);
 
   const getRoleBadge = (role) => {
     const r = ROLES.find(r => r.value === role);
@@ -136,8 +114,6 @@ const Users = () => {
         </Button>
       </div>
 
-      {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
-
       <Card>
         <CardContent className="pt-4">
           <div className="relative">
@@ -153,9 +129,14 @@ const Users = () => {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-lg">Users ({total})</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <span>Users ({total})</span>
+            {isFetching && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+          </CardTitle>
+        </CardHeader>
         <CardContent>
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>
           ) : users.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
@@ -241,7 +222,7 @@ const Users = () => {
         footer={
           <>
             <Button variant="outline" type="button" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button type="submit" form="user-form" isLoading={actionLoading}>
+            <Button type="submit" form="user-form" isLoading={createMutation.isPending || updateMutation.isPending}>
               {modalMode === 'add' ? 'Create User' : 'Save Changes'}
             </Button>
           </>

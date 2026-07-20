@@ -1,61 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import {
-  Activity, Users, UserCheck, ShoppingCart, DollarSign, Package,
+  Activity, Users, ShoppingCart, DollarSign, Package,
   HeartPulse, Clock, AlertTriangle, Loader2, RefreshCw,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { activityAPI, dashboardAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { useActivity, useActiveUsers, useSystemHealth, useDashboard } from '@/hooks/useQueries';
 
 const formatCurrency = (v) => `₱${Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
 const ActivityDashboard = () => {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [activity, setActivity] = useState([]);
-  const [activeUsers, setActiveUsers] = useState(0);
-  const [systemHealth, setSystemHealth] = useState({ status: 'healthy', uptime: '0h', dbSize: '0 MB' });
-  const [summary, setSummary] = useState(null);
+  // Cached queries with auto-refetch
+  const { data: activityData, isLoading: activityLoading, refetch: refetchActivity } = useActivity({ limit: 20 });
+  const { data: activeUsers = 0, refetch: refetchUsers } = useActiveUsers();
+  const { data: systemHealth = { status: 'healthy', uptime: '0h', dbSize: '0 MB' }, refetch: refetchHealth } = useSystemHealth();
+  const { data: dashboardData } = useDashboard();
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [activityRes, usersRes, healthRes, summaryRes] = await Promise.all([
-        activityAPI.getActivity({ limit: 20 }),
-        activityAPI.getActiveUsers(),
-        activityAPI.getSystemHealth(),
-        dashboardAPI.getSummary().catch(() => ({ data: {} })),
-      ]);
-      setActivity(activityRes.data?.recentActivity || []);
-      setActiveUsers(usersRes.data?.count || 0);
-      setSystemHealth(healthRes.data || { status: 'healthy', uptime: '0h', dbSize: '0 MB' });
-      setSummary(summaryRes.data || {});
-    } catch (err) {
-      setError('Failed to load activity data');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const activity = activityData?.recentActivity || activityData || [];
+  const summary = dashboardData?.summary || {};
+  const loading = activityLoading;
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const handleRefresh = () => {
+    refetchActivity();
+    refetchUsers();
+    refetchHealth();
+  };
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <AlertTriangle className="h-12 w-12 text-red-400 mx-auto" />
-          <p className="mt-4 text-red-600">{error}</p>
-          <button onClick={fetchData} className="mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">Retry</button>
-        </div>
-      </div>
-    );
   }
 
   const stats = [
@@ -63,8 +35,8 @@ const ActivityDashboard = () => {
     { title: 'Sales Today', value: formatCurrency(summary?.dailySales), icon: DollarSign, color: 'bg-green-500' },
     { title: 'Transactions', value: summary?.dailyTransactions || 0, icon: ShoppingCart, color: 'bg-purple-500' },
     { title: 'Inventory Value', value: formatCurrency(summary?.inventoryValue), icon: Package, color: 'bg-indigo-500' },
-    { title: 'System Status', value: systemHealth.status?.toUpperCase() || 'HEALTHY', icon: HeartPulse, color: systemHealth.status === 'healthy' ? 'bg-green-500' : 'bg-red-500' },
-    { title: 'Uptime', value: systemHealth.uptime || '0h', icon: Clock, color: 'bg-cyan-500' },
+    { title: 'System Status', value: (systemHealth?.status || 'healthy').toUpperCase(), icon: HeartPulse, color: (systemHealth?.status || 'healthy') === 'healthy' ? 'bg-green-500' : 'bg-red-500' },
+    { title: 'Uptime', value: systemHealth?.uptime || '0h', icon: Clock, color: 'bg-cyan-500' },
   ];
 
   return (
@@ -74,7 +46,7 @@ const ActivityDashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Activity Dashboard</h1>
           <p className="text-sm text-gray-500">System health and real-time activity</p>
         </div>
-        <button onClick={fetchData} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+        <button onClick={handleRefresh} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
           <RefreshCw className="h-5 w-5" />
         </button>
       </div>
@@ -130,16 +102,16 @@ const ActivityDashboard = () => {
                 <HeartPulse className="h-5 w-5 text-green-600" />
                 <span className="font-medium text-green-700">System Status</span>
               </div>
-              <Badge variant="success">{systemHealth.status?.toUpperCase() || 'HEALTHY'}</Badge>
+              <Badge variant="success">{(systemHealth?.status || 'healthy').toUpperCase()}</Badge>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500">Uptime</p>
-                <p className="font-semibold">{systemHealth.uptime || 'N/A'}</p>
+                <p className="font-semibold">{systemHealth?.uptime || 'N/A'}</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500">Database Size</p>
-                <p className="font-semibold">{systemHealth.dbSize || 'N/A'}</p>
+                <p className="font-semibold">{systemHealth?.dbSize || 'N/A'}</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500">Active Users</p>

@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Building2, Settings as SettingsIcon, Printer, Package, User,
   Database, Save, Loader2, Upload, Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { settingsAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import useAuthStore from '@/store/authStore';
+import { useSettings } from '@/hooks/useQueries';
+import { useUpdateSetting } from '@/hooks/useMutations';
 
 const TABS = [
   { id: 'company', label: 'Company', icon: Building2 },
@@ -22,92 +23,57 @@ const TABS = [
 const Settings = () => {
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState('company');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  // Company settings
+  // Cached settings (24h stale time)
+  // Backend returns a flat object: { company_name: "Store", company_address: "...", ... }
+  const { data: settingsMap = {}, isLoading } = useSettings();
+
+  // Local state initialized from cached data
   const [company, setCompany] = useState({
-    company_name: 'PGPOS Store',
-    company_address: '',
-    company_contact: '',
-    company_email: '',
-    tax_id: '',
-    logo_url: '',
+    company_name: settingsMap.company_name || 'PGPOS Store',
+    company_address: settingsMap.company_address || '',
+    company_contact: settingsMap.company_contact || '',
+    company_email: settingsMap.company_email || '',
+    tax_id: settingsMap.tax_id || '',
+    logo_url: settingsMap.logo_url || '',
   });
 
-  // POS settings
   const [pos, setPos] = useState({
-    receipt_header: '',
-    receipt_footer: 'Thank you for your purchase!',
-    vat_rate: '12',
-    currency: 'PHP',
-    decimal_places: '2',
+    receipt_header: settingsMap.receipt_header || '',
+    receipt_footer: settingsMap.receipt_footer || 'Thank you for your purchase!',
+    vat_rate: settingsMap.vat_rate || '12',
+    currency: settingsMap.currency || 'PHP',
+    decimal_places: settingsMap.decimal_places || '2',
   });
 
-  // Inventory settings
   const [inventory, setInventory] = useState({
-    barcode_format: 'CODE128',
-    low_stock_threshold: '10',
-    default_unit: 'piece',
+    barcode_format: settingsMap.barcode_format || 'CODE128',
+    low_stock_threshold: settingsMap.low_stock_threshold || '10',
+    default_unit: settingsMap.default_unit || 'piece',
   });
 
-  // Preferences
   const [preferences, setPreferences] = useState({
-    theme: 'light',
-    language: 'en',
-    timezone: 'Asia/Manila',
-    items_per_page: '20',
+    theme: settingsMap.theme || 'light',
+    language: settingsMap.language || 'en',
+    timezone: settingsMap.timezone || 'Asia/Manila',
+    items_per_page: settingsMap.items_per_page || '20',
   });
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      setLoading(true);
-      try {
-        const res = await settingsAPI.getAll();
-        const settings = res.data || [];
-        const map = {};
-        settings.forEach(s => { map[s.key] = s.value; });
+  // Mutation
+  const updateSettingMutation = useUpdateSetting();
 
-        if (map.company_name) setCompany(prev => ({ ...prev, ...map }));
-        if (map.receipt_header) setPos(prev => ({ ...prev, ...map }));
-        if (map.barcode_format) setInventory(prev => ({ ...prev, ...map }));
-        if (map.theme) setPreferences(prev => ({ ...prev, ...map }));
-      } catch (err) {
-        // Use defaults
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadSettings();
-  }, []);
-
-  const saveSettings = async (key, value) => {
-    setSaving(true);
-    try {
-      await settingsAPI.update(key, { key, value });
-      toast.success('Settings saved');
-    } catch (err) {
-      toast.error('Failed to save settings');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveAll = async (section, data) => {
-    setSaving(true);
+  const saveAll = useCallback(async (section, data) => {
     try {
       for (const [key, value] of Object.entries(data)) {
-        await settingsAPI.update(key, { key, value });
+        await updateSettingMutation.mutateAsync({ key, data: { key, value } });
       }
       toast.success(`${section} settings saved`);
     } catch (err) {
-      toast.error('Failed to save settings');
-    } finally {
-      setSaving(false);
+      // Error handled in mutation
     }
-  };
+  }, [updateSettingMutation]);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -191,7 +157,7 @@ const Settings = () => {
               </div>
             </div>
             <div className="flex justify-end pt-4 border-t">
-              <Button onClick={() => saveAll('Company', company)} isLoading={saving}>
+              <Button onClick={() => saveAll('Company', company)} isLoading={updateSettingMutation.isPending}>
                 <Save className="h-4 w-4 mr-1" /> Save Company Info
               </Button>
             </div>
@@ -245,7 +211,7 @@ const Settings = () => {
               </div>
             </div>
             <div className="flex justify-end pt-4 border-t">
-              <Button onClick={() => saveAll('POS', pos)} isLoading={saving}>
+              <Button onClick={() => saveAll('POS', pos)} isLoading={updateSettingMutation.isPending}>
                 <Save className="h-4 w-4 mr-1" /> Save POS Settings
               </Button>
             </div>
@@ -286,7 +252,7 @@ const Settings = () => {
               </div>
             </div>
             <div className="flex justify-end pt-4 border-t">
-              <Button onClick={() => saveAll('Inventory', inventory)} isLoading={saving}>
+              <Button onClick={() => saveAll('Inventory', inventory)} isLoading={updateSettingMutation.isPending}>
                 <Save className="h-4 w-4 mr-1" /> Save Inventory Settings
               </Button>
             </div>
@@ -333,7 +299,7 @@ const Settings = () => {
               </div>
             </div>
             <div className="flex justify-end pt-4 border-t">
-              <Button onClick={() => saveAll('Preferences', preferences)} isLoading={saving}>
+              <Button onClick={() => saveAll('Preferences', preferences)} isLoading={updateSettingMutation.isPending}>
                 <Save className="h-4 w-4 mr-1" /> Save Preferences
               </Button>
             </div>

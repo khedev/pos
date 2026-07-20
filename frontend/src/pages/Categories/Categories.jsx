@@ -1,94 +1,69 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   FolderTree, Plus, Edit, Trash2, Loader2, Search, ChevronLeft, ChevronRight, X,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { categoriesAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Badge from '@/components/ui/Badge';
 import Modal from '@/components/modal/Modal';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { useCategoriesPaginated } from '@/hooks/useQueries';
+import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '@/hooks/useMutations';
 
 const INITIAL_CATEGORY = { name: '', description: '' };
 
 const Categories = () => {
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [formData, setFormData] = useState(INITIAL_CATEGORY);
-  const [actionLoading, setActionLoading] = useState(false);
   const limit = 20;
 
-  const fetchCategories = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await categoriesAPI.getAll({ page, limit, search });
-      setCategories(res.data?.items || res.data || []);
-    } catch (err) {
-      setError('Failed to load categories');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search]);
+  // Cached query
+  const { data: categoriesData, isLoading, isFetching } = useCategoriesPaginated({ page, limit, search });
+  const categories = categoriesData?.items || categoriesData || [];
+  const total = categoriesData?.total || 0;
+  const totalPages = categoriesData?.totalPages || 0;
 
-  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  // Mutations
+  const createMutation = useCreateCategory();
+  const updateMutation = useUpdateCategory();
+  const deleteMutation = useDeleteCategory();
 
-  const openAddModal = () => {
+  const openAddModal = useCallback(() => {
     setModalMode('add');
     setFormData(INITIAL_CATEGORY);
     setSelectedCategory(null);
     setShowModal(true);
-  };
+  }, []);
 
-  const openEditModal = (cat) => {
+  const openEditModal = useCallback((cat) => {
     setModalMode('edit');
     setSelectedCategory(cat);
     setFormData({ name: cat.name, description: cat.description || '' });
     setShowModal(true);
-  };
+  }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    setActionLoading(true);
     try {
       if (modalMode === 'add') {
-        await categoriesAPI.create(formData);
-        toast.success('Category created');
+        await createMutation.mutateAsync(formData);
       } else {
-        await categoriesAPI.update(selectedCategory.id, formData);
-        toast.success('Category updated');
+        await updateMutation.mutateAsync({ id: selectedCategory.id, data: formData });
       }
       setShowModal(false);
-      fetchCategories();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Operation failed');
-    } finally {
-      setActionLoading(false);
+      // Error handled in mutation
     }
-  };
+  }, [formData, modalMode, selectedCategory, createMutation, updateMutation]);
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (id) => {
     if (!window.confirm('Delete this category?')) return;
-    try {
-      await categoriesAPI.delete(id);
-      toast.success('Category deleted');
-      fetchCategories();
-    } catch (err) {
-      toast.error('Failed to delete');
-    }
-  };
-
-  const filtered = (categories || []).filter(c =>
-    !search || c.name?.toLowerCase().includes(search.toLowerCase())
-  );
+    await deleteMutation.mutateAsync(id);
+  }, [deleteMutation]);
 
   return (
     <div className="space-y-6">
@@ -100,8 +75,6 @@ const Categories = () => {
         <Button onClick={openAddModal}><Plus className="h-4 w-4 mr-1" /> Add Category</Button>
       </div>
 
-      {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
-
       <Card>
         <CardContent className="pt-4">
           <div className="relative">
@@ -112,11 +85,16 @@ const Categories = () => {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-lg">Categories ({filtered.length})</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <span>Categories ({total})</span>
+            {isFetching && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+          </CardTitle>
+        </CardHeader>
         <CardContent>
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>
-          ) : filtered.length === 0 ? (
+          ) : categories.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <FolderTree className="h-12 w-12 mx-auto mb-3 opacity-50" />
               <p>No categories found</p>
@@ -133,7 +111,7 @@ const Categories = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((cat) => (
+                  {categories.map((cat) => (
                     <TableRow key={cat.id}>
                       <TableCell className="font-medium">{cat.name}</TableCell>
                       <TableCell className="text-sm text-gray-500">{cat.description || '—'}</TableCell>
@@ -150,6 +128,16 @@ const Categories = () => {
               </Table>
             </div>
           )}
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t mt-4">
+              <span className="text-sm text-gray-500">Page {page} of {totalPages} ({total} items)</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -161,7 +149,9 @@ const Categories = () => {
         footer={
           <>
             <Button variant="outline" type="button" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button type="submit" form="category-form" isLoading={actionLoading}>{modalMode === 'add' ? 'Create' : 'Save'}</Button>
+            <Button type="submit" form="category-form" isLoading={createMutation.isPending || updateMutation.isPending}>
+              {modalMode === 'add' ? 'Create' : 'Save'}
+            </Button>
           </>
         }
       >

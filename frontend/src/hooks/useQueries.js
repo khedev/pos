@@ -60,10 +60,12 @@ export function useSettings() {
     queryFn: async () => {
       const { settingsAPI } = await import('@/lib/api');
       const res = await settingsAPI.getAll();
+      // Backend returns a flat object: { key: value, ... }
       return res.data || {};
     },
     staleTime: STALE_TIME_STATIC,
     gcTime: GC_TIME_STATIC,
+    placeholderData: {},
   });
 }
 
@@ -143,6 +145,50 @@ export function useProductSearch(query, category = '', enabled = true) {
     enabled: enabled && !!query,
     staleTime: 60 * 1000, // 1 minute for search results
     gcTime: 5 * 60 * 1000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// ============================================================
+// Categories — paginated for management page
+// ============================================================
+
+/**
+ * Get paginated/filtered categories for the management page
+ */
+export function useCategoriesPaginated(filters = {}) {
+  const { page = 1, limit = 20, search = '' } = filters;
+  return useQuery({
+    queryKey: ['categories', 'paginated', { page, limit, search }],
+    queryFn: async () => {
+      const { categoriesAPI } = await import('@/lib/api');
+      const res = await categoriesAPI.getAll({ page, limit, search });
+      return { items: res.data?.items || res.data || [], total: res.data?.total || 0, totalPages: res.data?.totalPages || 0 };
+    },
+    staleTime: STALE_TIME_NORMAL,
+    gcTime: GC_TIME_NORMAL,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// ============================================================
+// Suppliers — paginated for management page
+// ============================================================
+
+/**
+ * Get searchable suppliers for the management page
+ */
+export function useSuppliersPaginated(filters = {}) {
+  const { search = '' } = filters;
+  return useQuery({
+    queryKey: ['suppliers', 'paginated', { search }],
+    queryFn: async () => {
+      const { suppliersAPI } = await import('@/lib/api');
+      const res = await suppliersAPI.getAll({ search });
+      return { items: res.data?.items || res.data || [], total: res.data?.total || 0 };
+    },
+    staleTime: STALE_TIME_NORMAL,
+    gcTime: GC_TIME_NORMAL,
     placeholderData: (prev) => prev,
   });
 }
@@ -343,12 +389,13 @@ export function useUnreadNotificationCount() {
 }
 
 export function useAuditLogs(filters = {}) {
-  const { page = 1, limit = 50 } = filters;
+  const { page = 1, limit = 50, search = '', action = '', entity = '', startDate = '', endDate = '' } = filters;
   return useQuery({
-    queryKey: ['audit-logs', { page, limit }],
+    queryKey: ['audit-logs', { page, limit, search, action, entity, startDate, endDate }],
     queryFn: async () => {
       const { auditAPI } = await import('@/lib/api');
-      const res = await auditAPI.getAll({ page, limit });
+      const params = { page, limit, ...(search && { search }), ...(action && { action }), ...(entity && { entity }), ...(startDate && { startDate }), ...(endDate && { endDate }) };
+      const res = await auditAPI.getAll(params);
       return res.data;
     },
     staleTime: 60 * 1000,
@@ -379,7 +426,7 @@ export function useActiveUsers() {
     queryFn: async () => {
       const { activityAPI } = await import('@/lib/api');
       const res = await activityAPI.getActiveUsers();
-      return res.data || [];
+      return res.data?.count || 0;
     },
     staleTime: 60 * 1000,
     gcTime: 5 * 60 * 1000,
@@ -393,7 +440,7 @@ export function useSystemHealth() {
     queryFn: async () => {
       const { activityAPI } = await import('@/lib/api');
       const res = await activityAPI.getSystemHealth();
-      return res.data || {};
+      return res.data || { status: 'healthy', uptime: '0h', dbSize: '0 MB' };
     },
     staleTime: 60 * 1000,
     gcTime: 5 * 60 * 1000,
